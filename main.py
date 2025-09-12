@@ -17,7 +17,7 @@ def start(message):
 # Команда help
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    bot.reply_to(message, "/start - начать\n/help - помощь")
+    bot.reply_to(message, "/start - начать\n/help - помощь\n/about - информация о боте\n/ping - простая проверка работоспособности бота")
 
 # Команда about (Первое дз, обязательная часть)
 @bot.message_handler(commands=['about'])
