@@ -17,5 +17,9 @@ def start(message):
 def help_cmd(message):
     bot.reply_to(message, "/start - начать\n/help - помощь")
 
+@bot.message_handler(commands=['about'])
+def about(message):
+    bot.reply_to(message, "Это мой первый телеграм-бот, созданный в рамках практического семинара. Автор: [ваше имя]")
+
 if __name__=="__main__":
     bot.infinity_polling(skip_pending=True)
