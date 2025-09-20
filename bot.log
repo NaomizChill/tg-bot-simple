@@ -1,2 +1,49 @@
 2025-09-12 11:39:07,763 - TeleBot - ERROR - Infinity polling: polling exited
 2025-09-12 11:39:07,763 - TeleBot - ERROR - Break infinity polling
+2025-09-12 11:42:42,952 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-12 11:42:42,952 - TeleBot - ERROR - Break infinity polling
+2025-09-20 10:35:39,453 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 10:35:39,454 - TeleBot - ERROR - Break infinity polling
+2025-09-20 10:39:51,063 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 10:39:51,064 - TeleBot - ERROR - Break infinity polling
+2025-09-20 10:40:29,046 - TeleBot - ERROR - Infinity polling exception: 'TeleBot' object has no attribute 'send_messagem'
+2025-09-20 10:40:29,065 - TeleBot - ERROR - Exception traceback:
+Traceback (most recent call last):
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1110, in infinity_polling
+    self.polling(non_stop=True, timeout=timeout, long_polling_timeout=long_polling_timeout,
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1198, in polling
+    self.__threaded_polling(non_stop=non_stop, interval=interval, timeout=timeout, long_polling_timeout=long_polling_timeout,
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1273, in __threaded_polling
+    raise e
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1235, in __threaded_polling
+    self.worker_pool.raise_exceptions()
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\util.py", line 154, in raise_exceptions
+    raise self.exception_info
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 10134, in _run_middlewares_and_handler
+    result = handler['function'](message)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\main.py", line 75, in hide_kb
+    rm =types.ReplyKeyboardRemove()
+    ^^^^^^^^^^^^^^^^^
+AttributeError: 'TeleBot' object has no attribute 'send_messagem'. Did you mean: 'send_message'?
+
+2025-09-20 10:40:50,108 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 10:40:50,108 - TeleBot - ERROR - Break infinity polling
+2025-09-20 10:43:05,121 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 10:43:05,121 - TeleBot - ERROR - Break infinity polling
+2025-09-20 10:46:03,223 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 10:46:03,223 - TeleBot - ERROR - Break infinity polling
+2025-09-20 11:02:14,989 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 11:02:14,989 - TeleBot - ERROR - Break infinity polling
+2025-09-20 11:21:44,105 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 11:21:44,106 - TeleBot - ERROR - Break infinity polling
+2025-09-20 11:43:33,099 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 11:43:33,099 - TeleBot - ERROR - Break infinity polling
+2025-09-20 11:44:22,134 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 11:44:22,134 - TeleBot - ERROR - Break infinity polling
+2025-09-20 11:44:43,358 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 11:44:43,359 - TeleBot - ERROR - Break infinity polling
+2025-09-20 11:45:45,822 - TeleBot - ERROR - Infinity polling: polling exited
+2025-09-20 11:45:45,822 - TeleBot - ERROR - Break infinity polling
