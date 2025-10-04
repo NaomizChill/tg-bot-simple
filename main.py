@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 # Загрузка переменных окружения и инициализация бота
 load_dotenv()
-bot = TeleBot(os.getenv('TELEGRAM_BOT_TOKEN'))
+bot = TeleBot(os.getenv('TOKEN'))
 
 # Настройка логирования для отслеживания действий бота
 logging.basicConfig(
