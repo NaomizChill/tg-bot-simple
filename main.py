@@ -1,148 +1,199 @@
 import os
-from dotenv import load_dotenv
-import telebot
-from telebot import types
-from typing import List
+import logging
 import requests
+from telebot import TeleBot, types
+from dotenv import load_dotenv
 
+# Загрузка переменных окружения и инициализация бота
 load_dotenv()
+bot = TeleBot(os.getenv('TELEGRAM_BOT_TOKEN'))
 
-TOKEN = os.getenv("TOKEN")
-if not TOKEN:
-    raise RuntimeError ("В.env нет TOKEN")
+# Настройка логирования для отслеживания действий бота
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-# Команда старт
-bot = telebot.TeleBot(TOKEN)
 
-def parse_ints_from_text(text: str) -> List[int]:
-    """Выделяет из текста целые числа: нормализует запятые, игнорирует токены-команды."""
+# --- Вспомогательные функции ---
+
+def parse_ints_from_text(text: str) -> list[int]:
+    """
+    Извлекает целые числа из текста, поддерживая разные разделители.
+    Игнорирует команды, начинающиеся с '/'.
+    """
+    # Заменяем запятые на пробелы для унификации
     text = text.replace(",", " ")
-    tokens = [tok for tok in text.split() if not tok.startswith("/")]
-    return [int(tok) for tok in tokens if is_int_token(tok)]
+    # Разбиваем текст на токены и отфильтровываем команды
+    tokens = [t for t in text.split() if not t.startswith("/")]
 
-def is_int_token(t: str) -> bool:
-    """Проверка токена на целое число (с поддержкой знака минус)."""
-    if not t:
-        return False
-    t = t.strip()
-    if t in {"-", ""}:
-        return False
-    return t.lstrip("-").isdigit()
+    nums = []
+    for t in tokens:
+        # Убираем возможный знак минуса для проверки на число
+        cleaned_token = t.strip().lstrip("-")
+        if cleaned_token.isdigit():  # Проверяем, является ли токен числом
+            nums.append(int(t))
+    return nums
 
-# Приветственное сообщение
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to (message, "Привет! Я твой первый бот! Напиши /help", reply_markup=make_main_kb())
 
-# Клавиатура
 def make_main_kb() -> types.ReplyKeyboardMarkup:
+    """Создает основную Reply-клавиатуру с кнопками."""
+    # Создаём клавиатуру с автоподгонкой размера
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-
-    kb.row("/about", "Сумма")
-    kb.row("/help","/hide")
-    kb.row("Погода")
-
+    # Добавляем кнопки по рядам
+    kb.row("О боте", "Сумма", "Погода (Москва)")
+    # НОВЫЕ КНОПКИ ИЗ ДОМАШНЕГО ЗАДАНИЯ
+    kb.row("/show", "/hide")
+    kb.row("/help")
     return kb
 
-# Команда help
-@bot.message_handler(commands=['help'])
-def help_cmd(message):
-    bot.reply_to(message, "/start - начать\n/help - помощь\n/about - информация о боте\n/ping - простая проверка работоспособности бота\n/sum - суммирование чисел\n/weather - погода в Москве")
 
-# Команда about (Первое дз, обязательная часть)
-@bot.message_handler(commands=['about'])
-def about(message):
-    bot.reply_to(message, "Это мой первый телеграм-бот, созданный в рамках практического семинара. Автор: Колонтырский Илья Русланович 1132237378")
+# Словарь для кодов погоды от Open-Meteo
+WMO_DESC = {
+    0: "Ясно", 1: "В осн. ясно", 2: "Переменная облачность", 3: "Пасмурно",
+    45: "Туман", 48: "Изморозь", 51: "Морось", 53: "Морось", 55: "Сильная морось",
+    61: "Дождь", 63: "Дождь", 65: "Сильный дождь", 71: "Снег",
+    80: "Ливни", 95: "Гроза"
+}
 
-# Команда ping (Первое дз, опциональная часть)
-@bot.message_handler(commands=['ping'])
-def ping(message):
-    bot.reply_to(message, "Понг!")
 
-# Комманад sum:
-@bot.message_handler(func=lambda m: m.text == "Сумма")
-def kb_sum(m):
-    bot.send_message(m.chat.id, "Введи числа через пробел или запятую:")
-    bot.register_next_step_handler(m, on_sum_numbers)
-
-def on_sum_numbers(m: types.Message) -> None:
-    nums = parse_ints_from_text(m.text)
-    #logging.info("KB-sum next step from id=%s text=%r -> %r", m.from_user.id if m.from_user else "?", m.text, nums)
-    if not nums:
-        bot.reply_to(m, "Не вижу чисел. Пример: 2 3 10")
-    else:
-        bot.reply_to(m, f"Сумма: {sum(nums)}")
-
-# Обработчик нажатия кнопки weather
-@bot.message_handler(func=lambda m: m.text == "Погода")
-def kb_weather(m):
-    bot.send_message(m.chat.id, fetch_weather_moscow_open_meteo())
-
-# Скрытие клавиатуры
-@bot.message_handler(commands=['hide'])
-def hide_kb(m):
-    rm =types.ReplyKeyboardRemove()
-    bot.send_message(m.chat.id, "Спрятал клавиатуру.", reply_markup=rm)
-
-#Погода
 def fetch_weather_moscow_open_meteo() -> str:
+    """Запрашивает и форматирует данные о погоде для Москвы."""
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
-        "latitude": 55.7558,
-        "longitude": 37.6173,
-        "current": "temperature_2m",
+        "latitude": 55.7558, "longitude": 37.6173,
+        "current": "temperature_2m,weather_code",
         "timezone": "Europe/Moscow"
     }
     try:
         r = requests.get(url, params=params, timeout=5)
         r.raise_for_status()
-        t = r.json()["current"]["temperature_2m"]
-        return f"Москва: сейчас {round(t)}°C"
-    except Exception:
-        return "Не удалось получить погоду."
+        data = r.json()
+        cur = data["current"]
+        temp = round(cur["temperature_2m"])
+        code = int(cur.get("weather_code", 0))
+        return f"Москва: сейчас {temp}°C, {WMO_DESC.get(code, 'нет данных о погоде')}"
+    except requests.exceptions.RequestException:
+        return "Не удалось получить погоду (сеть)."
+    except (KeyError, TypeError, ValueError):
+        return "Ответ погоды в неожидаемом формате."
 
-@bot.message_handler(commands=['weather'])
-def weather_cmd(m):
-    bot.reply_to(m, fetch_weather_moscow_open_meteo())
 
-# Inline кнопки создание
+# --- Обработчики команд и сообщений ---
+
+@bot.message_handler(commands=['start', 'help'])
+def start_help(m: types.Message):
+    """Обработчик команд /start и /help, отправляет приветствие и клавиатуру."""
+    welcome_text = (
+        "Привет! Я тестовый бот. "
+        "Нажми на одну из кнопок в меню для взаимодействия."
+    )
+    bot.send_message(m.chat.id, welcome_text, reply_markup=make_main_kb())
+
+
+# --- НОВАЯ КОМАНДА /max ИЗ ДОМАШНЕГО ЗАДАНИЯ ---
+@bot.message_handler(commands=['max'])
+def cmd_max(m: types.Message):
+    """Находит максимальное число из переданных."""
+    logging.info(f"/max от {m.from_user.first_name} ({m.from_user.id}): {m.text}")
+    nums = parse_ints_from_text(m.text)
+    logging.info(f"Распознаны числа: {nums}")
+
+    if not nums:
+        bot.reply_to(m, "Пожалуйста, укажите числа через пробел или запятую. Пример: /max 2 3 10")
+    else:
+        bot.reply_to(m, f"Максимум: {max(nums)}")
+
+
+@bot.message_handler(commands=['sum'])
+def cmd_sum(m: types.Message):
+    """Суммирует числа, переданные в сообщении."""
+    logging.info(f"/sum от {m.from_user.first_name} ({m.from_user.id}): {m.text}")
+    nums = parse_ints_from_text(m.text)
+    logging.info(f"Распознаны числа: {nums}")
+    bot.reply_to(m, f"Сумма: {sum(nums)}" if nums else "Пример: /sum 2 3 10")
+
+
+# --- ОБНОВЛЕННЫЕ КОМАНДЫ ДЛЯ РАБОТЫ С КЛАВИАТУРОЙ ---
+@bot.message_handler(commands=['hide'])
+def hide_kb(m: types.Message):
+    """Прячет Reply-клавиатуру."""
+    rm = types.ReplyKeyboardRemove()
+    bot.send_message(m.chat.id, "Спрятал клавиатуру.", reply_markup=rm)
+
+
+@bot.message_handler(commands=['show'])
+def show_kb(m: types.Message):
+    """Показывает Reply-клавиатуру."""
+    bot.send_message(m.chat.id, "Вот клавиатура:", reply_markup=make_main_kb())
+
+
+# --- ОБНОВЛЕННАЯ КОМАНДА /confirm ИЗ ДОМАШНЕГО ЗАДАНИЯ ---
 @bot.message_handler(commands=['confirm'])
-def confirm_cmd(m):
+def confirm_cmd(m: types.Message):
+    """Отправляет Inline-кнопки для подтверждения."""
     kb = types.InlineKeyboardMarkup()
     kb.add(
-        types.InlineKeyboardButton("Да", callback_data="confirm:yes"),
-        types.InlineKeyboardButton("Нет", callback_data="confirm:no"),
+        types.InlineKeyboardButton("Да", callback_data="save:yes"),
+        types.InlineKeyboardButton("Нет", callback_data="save:no"),
+        # Новая кнопка "Отмена"
+        types.InlineKeyboardButton("Отмена", callback_data="save:later"),
     )
-    bot.send_message(m.chat.id, "Подтвердить действие?", reply_markup=kb)
+    # Обновленный текст сообщения
+    bot.send_message(m.chat.id, "Сохранить изменения?", reply_markup=kb)
 
-# Обратоботка callback от inline кнопок
-@bot.callback_query_handler(func=lambda c: c.data.startswith("confirm:"))
-def on_confirm(c):
+
+# --- ОБНОВЛЕННЫЙ ОБРАБОТЧИК ДЛЯ INLINE-КНОПОК ---
+@bot.callback_query_handler(func=lambda c: c.data.startswith("save:"))
+def on_confirm(c: types.CallbackQuery):
+    """Обрабатывает нажатия на Inline-кнопки."""
     # Извлекаем выбор пользователя
-    choice = c.data.split(":", 1)[1] # "yes" иnи "no"
-    # Показываем "тик" на нажатой кнопке
-    bot.answer_callback_query(c.id, "Принято")
-    # Убираем inline-кнопки
+    choice = c.data.split(":", 1)[1]
+
+    # Отправляем "часики" на нажатой кнопке
+    bot.answer_callback_query(c.id, "Принято!")
+
+    # Убираем inline-кнопки из сообщения
     bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=None)
-    # Отправляем результат
-    bot.send_message(c.message.chat.id, "Готово!" if choice == "yes" else "Отменено.")
 
-# Логгирование (Первое дз, опциональная часть)
-import logging
+    # Отправляем результат в зависимости от выбора
+    if choice == "yes":
+        bot.send_message(c.message.chat.id, "Готово!")
+    elif choice == "no":
+        bot.send_message(c.message.chat.id, "Отменено.")
+    elif choice == "later":
+        bot.send_message(c.message.chat.id, "Отложено.")
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    filename='bot.log')
-@bot.message_handler(commands=['sum'])
-def cmd_sum(m):
-    #Логируем входящую команду
-    logging.info(f"/sum от {m.from_user.first_name}{m.from_user.id}:{m.text}")
 
+# --- Обработчики кнопок Reply-клавиатуры ---
+@bot.message_handler(func=lambda m: m.text == "О боте")
+def kb_about(m: types.Message):
+    bot.reply_to(m, "Я умею: /start, /help, /sum, /max, /hide, /show, /confirm")
+
+
+@bot.message_handler(func=lambda m: m.text == "Сумма")
+def kb_sum(m: types.Message):
+    """Запускает сценарий суммирования чисел."""
+    bot.send_message(m.chat.id, "Введите числа через пробел или запятую:")
+    bot.register_next_step_handler(m, on_sum_numbers)
+
+
+def on_sum_numbers(m: types.Message):
+    """Получает числа и считает сумму."""
     nums = parse_ints_from_text(m.text)
+    if not nums:
+        bot.reply_to(m, "Не вижу чисел. Пример: 2 3 10 или 2, 3, -5")
+    else:
+        bot.reply_to(m, f"Сумма: {sum(nums)}")
 
-    #Логируем результаты парсинга
-    logging.info(f"распознаны числа: {nums}")
+
+@bot.message_handler(func=lambda m: m.text == "Погода (Москва)")
+def kb_weather_moscow(m: types.Message):
+    """Отправляет погоду для Москвы по нажатию кнопки."""
+    bot.send_message(m.chat.id, fetch_weather_moscow_open_meteo())
 
 
-if __name__=="__main__":
+# --- Основной цикл ---
+if __name__ == '__main__':
+    logging.info("Бот запущен")
     bot.infinity_polling(skip_pending=True)
