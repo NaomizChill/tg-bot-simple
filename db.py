@@ -33,7 +33,7 @@ def add_note(user_id: int, text: str) -> int:
     return cur.lastrowid
 
 
-def list_notes(user_id: int, limit: int = 10):
+def list_notes(user_id: int, limit: int = 100):
     with _connect() as conn:
         cur = conn.execute(
             """SELECT id, text, created_at
@@ -44,6 +44,32 @@ def list_notes(user_id: int, limit: int = 10):
             (user_id, limit)
         )
     return cur.fetchall()
+
+
+def find_notes(user_id: int, query: str, limit: int = 50):
+    """Поиск заметок по тексту"""
+    with _connect() as conn:
+        cur = conn.execute(
+            """SELECT id, text, created_at
+            FROM notes
+            WHERE user_id = ? AND LOWER(text) LIKE LOWER(?)
+            ORDER BY id DESC
+            LIMIT ?""",
+            (user_id, f"%{query}%", limit)
+        )
+    return cur.fetchall()
+
+
+def get_note_by_id(user_id: int, note_id: int):
+    """Получить одну заметку по ID"""
+    with _connect() as conn:
+        cur = conn.execute(
+            """SELECT id, text, created_at
+            FROM notes
+            WHERE user_id = ? AND id = ?""",
+            (user_id, note_id)
+        )
+    return cur.fetchone()
 
 
 def update_note(user_id: int, note_id: int, text: str) -> bool:
