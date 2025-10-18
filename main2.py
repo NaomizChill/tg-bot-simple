@@ -204,6 +204,14 @@ def note_del(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка при удалении: {str(e)}")
 
+@bot.message_handler(commands=['note_count'])
+def note_count(message):
+    try:
+        count = db.count_notes(message.from_user.id)
+        bot.reply_to(message, f"📊 У вас всего {count} заметок.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при подсчете заметок: {str(e)}")
+
 
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
