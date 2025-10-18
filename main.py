@@ -3,6 +3,7 @@ import logging
 import requests
 from telebot import TeleBot, types
 from dotenv import load_dotenv
+from db import *
 
 # Загрузка переменных окружения и инициализация бота
 load_dotenv()
@@ -192,6 +193,55 @@ def kb_weather_moscow(m: types.Message):
     """Отправляет погоду для Москвы по нажатию кнопки."""
     bot.send_message(m.chat.id, fetch_weather_moscow_open_meteo())
 
+@bot.message_handler(commands=["models"])
+def cmd_models(message: types.Message) -> None:
+    items = list_models()
+    if not items:
+        bot.reply_to(message, "Список моделей пуст.")
+        return
+    lines = ["Доступные модели:"]
+    for m in items:
+        star = "★" if m["active"] else " "
+        lines.append(f"{star} {m['id']}. {m['label']}  [{m['key']}]")
+    lines.append("\nАктивировать: /model <ID>")
+    bot.reply_to(message, "\n".join(lines))
+
+@bot.message_handler(commands=['model'])
+def cmd_model(message: types.Message)->None:
+    arg = message.text.replace("/model" , "" , 1).strip()
+    if not arg:
+        active = get_active_model()
+        bot.reply_to(message , f"Текущая активная моедль: {active['label']} [{active['key']}]\n(сменить: /model <ID> или /models)")
+        return
+    if not arg.isdigit():
+        bot.reply_to(message, "Использование: /model <ID из /models>")
+        return
+    try:
+        active = set_active_model(int(arg))
+        bot.reply_to(message, f"Активная модель переключена: {active['label']} [{active["key"]}]")
+    except ValueError:
+        bot.reply_to(message, "Неизвестный ID модели. Сначала /models.")
+
+
+@bot.message_handler(commands=['start', 'help'])
+def cmd_start(message: types.Message) -> None:
+    """
+
+    """
+    text = (
+        "привет! это заметочник на SQLite. \n\n"
+        "команда: \n"
+        "/note_add <текст>\n"
+        "/note_list [N]\n"
+        "/note_find <подстрока>\n"
+        "/note_edit <id> <текст>\n"
+        "/note_del <id>\n"
+        "/note_count\n"
+        "/note_export\n"
+        "note_stats [days]\n"
+        "/models\n"
+        "/model <id>\n"
+    )
 
 # --- Основной цикл ---
 if __name__ == '__main__':
