@@ -11,30 +11,61 @@ def _connect():
     conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
+
 def init_db():
     schema = """
     CREATE TABLE IF NOT EXISTS notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE TABLE IF NOT EXIST models(
-    id INTEGER PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
-    label TEXT NOT NULL,
-    active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0,1))
+    CREATE TABLE IF NOT EXISTS models(
+        id INTEGER PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0,1))
     );
-    CREATE NEW INDEX IF NOT EXIST ux_models_single_active ON models(active) WHERE active=1;
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_models_single_active ON models(active) WHERE active=1;
 
     INSERT OR IGNORE INTO models(id, key, label, active) VALUES
         (1, 'deepseek/deepseek-chat-v3.1:free', 'DeepSeek V3.1 (free)', 1),
         (2, 'deepseek/deepseek-r1:free', 'DeepSeek R1 (free)', 0),
         (3, 'mistralai/mistral-small-24b-instruct-2501:free', 'Mistral Small 24b (free)', 0),
         (4, 'meta-llama/llama-3.1-8b-instruct:free', 'Llama 3.1 8B (free)', 0);
+
+    /* --- НОВЫЕ ТАБЛИЦЫ ДЛЯ ПЕРСОНАЖЕЙ --- */
+    CREATE TABLE IF NOT EXISTS characters (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        prompt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_character (
+        telegram_user_id INTEGER PRIMARY KEY,
+        character_id INTEGER NOT NULL,
+        FOREIGN KEY(character_id) REFERENCES characters(id)
+    );
     """
+
+    characters_data = """
+    INSERT OR IGNORE INTO characters (id, name, prompt) VALUES
+        (1, 'Йода', 'Ты отвечаешь строго в образе персонажа «Йода» из вселенной «Звёздные войны». Стиль: мудрые и загадочные речи, инверсия слов.'),
+        (2, 'Дарт Вейдер', 'Ты отвечаешь строго в образе персонажа «Дарт Вейдер» из «Звёздных войн». Стиль: властный, тёмный, угрожающий.'),
+        (3, 'Мистер Спок', 'Ты отвечаешь строго в образе персонажа «Спок» из «Звёздного пути». Стиль: логичный, беспристрастный, точный.'),
+        (4, 'Тони Старк', 'Ты отвечаешь строго в образе персонажа «Тони Старк» из киновселенной Marvel. Стиль: остроумный, саркастичный, гениальный.'),
+        (5, 'Шерлок Холмс', 'Ты отвечаешь строго в образе «Шерлока Холмса». Стиль: дедукция шаг за шагом, внимание к деталям.'),
+        (6, 'Капитан Джек Воробей', 'Ты отвечаешь строго в образе «Капитана Джека Воробья». Стиль: ироничный, эксцентричный, непредсказуемый.'),
+        (7, 'Гэндальф', 'Ты отвечаешь строго в образе «Гэндальфа» из «Властелина колец». Стиль: наставнический, мудрый, величественный.'),
+        (8, 'Винни-Пух', 'Ты отвечаешь строго в образе «Винни-Пуха». Стиль: просто, доброжелательно, наивный, с любовью к мёду.'),
+        (9, 'Голум', 'Ты отвечаешь строго в образе «Голума» из «Властелина колец». Стиль: шёпот, шипящие звуки, раздвоение личности.'),
+        (10, 'Рик', 'Ты отвечаешь строго в образе «Рика» из «Рика и Морти». Стиль: сухой сарказм, цинизм, научный жаргон.'),
+        (11, 'Бендер', 'Ты отвечаешь строго в образе «Бендера» из «Футурамы». Стиль: дерзкий, самоуверенный, эгоистичный.');
+    """
+
     with _connect() as conn:
         conn.executescript(schema)
+        conn.executescript(characters_data)
 
 
 
@@ -130,3 +161,65 @@ def delete_note(user_id: int, note_id: int) -> bool:
             (user_id, note_id)
         )
     return cur.rowcount > 0
+
+
+# --- Функции для работы с персонажами ---
+
+def list_characters() -> list[dict]:
+    """Возвращает список всех персонажей."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT id, name FROM characters ORDER BY id").fetchall()
+        return [{"id": r["id"], "name": r["name"]} for r in rows]
+
+
+def get_character_by_id(character_id: int) -> dict | None:
+    """Возвращает персонажа по его ID."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT id, name, prompt FROM characters WHERE id=?",
+            (character_id,)
+        ).fetchone()
+        if row:
+            return {"id": row["id"], "name": row["name"], "prompt": row["prompt"]}
+        return None
+
+
+def set_user_character(user_id: int, character_id: int) -> dict:
+    """Устанавливает персонажа для пользователя (UPSERT)."""
+    character = get_character_by_id(character_id)
+    if not character:
+        raise ValueError("Неизвестный ID персонажа")
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_character(telegram_user_id, character_id) VALUES(?, ?)
+            ON CONFLICT(telegram_user_id) DO UPDATE SET character_id=excluded.character_id
+            """,
+            (user_id, character_id)
+        )
+    return character
+
+
+def get_user_character(user_id: int) -> dict:
+    """Получает персонажа для пользователя, с фолбэком на первого в списке."""
+    with _connect() as conn:
+        # Сначала пробуем найти выбранного персонажа
+        row = conn.execute("""
+            SELECT p.id, p.name, p.prompt
+            FROM user_character uc
+            JOIN characters p ON p.id = uc.character_id
+            WHERE uc.telegram_user_id = ?
+        """, (user_id,)).fetchone()
+        if row:
+            return {"id": row["id"], "name": row["name"], "prompt": row["prompt"]}
+
+        # Если не найден, берем первого персонажа по умолчанию (ID=1)
+        row = conn.execute("SELECT id, name, prompt FROM characters WHERE id=1").fetchone()
+        if row:
+            return {"id": row["id"], "name": row["name"], "prompt": row["prompt"]}
+
+        # Если и его нет, берем вообще любого первого
+        row = conn.execute("SELECT id, name, prompt FROM characters ORDER BY id LIMIT 1").fetchone()
+        if not row:
+            raise RuntimeError("Таблица characters пуста")
+        return {"id": row["id"], "name": row["name"], "prompt": row["prompt"]}

@@ -1,0 +1,1049 @@
+config3.py
+"""
+config.py — конфигурация проекта: переменные окружения и базовое логирование.
+Курс: TeleBot (pyTelegramBotAPI) + sqlite3 + python-dotenv, запуск long polling.
+"""
+
+from __future__ import annotations
+import os
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TOKEN: str | None = os.getenv("TOKEN")
+DB_PATH: str = os.getenv("DB_PATH", "bot.db")
+
+LOG_LEVEL_NAME = (os.getenv("LOG_LEVEL") or "INFO").upper()
+LOG_LEVEL = getattr(logging, LOG_LEVEL_NAME, logging.INFO)
+
+DEFAULT_NOTIFY_HOUR = int(os.getenv("DEFAULT_NOTIFY_HOUR", "9"))
+
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+
+if not TOKEN:
+    raise RuntimeError("Нет TOKEN в .env — получите токен у @BotFather и положите его в .env")
+
+__all__ = ["TOKEN", "DB_PATH", "DEFAULT_NOTIFY_HOUR", "LOG_LEVEL"]
+
+
+db.py
+import os
+import sqlite3
+
+DB_PATH = os.getenv("DB_PATH", "bot.db")
+
+def _connect():
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
+
+def init_db():
+    schema = """
+    CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXIST models(
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0,1))
+    );
+    CREATE NEW INDEX IF NOT EXIST ux_models_single_active ON models(active) WHERE active=1;
+
+    INSERT OR IGNORE INTO models(id, key, label, active) VALUES
+        (1, 'deepseek/deepseek-chat-v3.1:free', 'DeepSeek V3.1 (free)', 1),
+        (2, 'deepseek/deepseek-r1:free', 'DeepSeek R1 (free)', 0),
+        (3, 'mistralai/mistral-small-24b-instruct-2501:free', 'Mistral Small 24b (free)', 0),
+        (4, 'meta-llama/llama-3.1-8b-instruct:free', 'Llama 3.1 8B (free)', 0);
+    """
+    with _connect() as conn:
+        conn.executescript(schema)
+
+
+
+def add_note(user_id: int, text: str) -> int:
+    with _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO notes(user_id, text) VALUES (?, ?)",
+            (user_id, text)
+        )
+    return cur.lastrowid
+
+
+def list_notes(user_id: int, limit: int = 100):
+    with _connect() as conn:
+        cur = conn.execute(
+            """SELECT id, text, created_at
+            FROM notes
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?""",
+            (user_id, limit)
+        )
+    return cur.fetchall()
+
+
+def find_notes(user_id: int, query: str, limit: int = 50):
+    """Поиск заметок по тексту"""
+    with _connect() as conn:
+        cur = conn.execute(
+            """SELECT id, text, created_at
+            FROM notes
+            WHERE user_id = ? AND LOWER(text) LIKE LOWER(?)
+            ORDER BY id DESC
+            LIMIT ?""",
+            (user_id, f"%{query}%", limit)
+        )
+    return cur.fetchall()
+
+
+def get_note_by_id(user_id: int, note_id: int):
+    """Получить одну заметку по ID"""
+    with _connect() as conn:
+        cur = conn.execute(
+            """SELECT id, text, created_at
+            FROM notes
+            WHERE user_id = ? AND id = ?""",
+            (user_id, note_id)
+        )
+    return cur.fetchone()
+
+
+def update_note(user_id: int, note_id: int, text: str) -> bool:
+    with _connect() as conn:
+        cur = conn.execute(
+            """UPDATE notes
+            SET text = ?
+            WHERE user_id = ? AND id = ?""",
+            (text, user_id, note_id)
+        )
+    return cur.rowcount > 0
+
+def list_models() -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT id,key,label,active FROM models ORDER BY id").fetchall()
+        return [{"id":r["id"], "key":r["key"], "label":r["label"], "active":bool(r["active"])} for r in rows]
+
+def get_active_model() -> dict:
+    with _connect() as conn:
+        row = conn.execute("SELECT id,key,label FROM models WHERE active=1").fetchone()
+        if row:
+            return {"id":row["id"], "key":row["key"], "label":row["label"], "active":True}
+        row = conn.execute("SELECT id,key,label FROM models ORDER BY id LIMIT 1").fetchone()
+        if not row:
+            raise RuntimeError("В реестре моделей нет записей")
+        conn.execute("UPDATE models SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (row["id"],))
+        return {"id":row["id"], "key":row["key"], "label":row["label"], "active":True}
+
+def set_active_model(model_id: int)-> dict:
+    with _connect as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        exists = conn.execute("SELECT 1 FROM models WHERE id=?", (model_id,)).fetchone()
+        if not exists:
+            conn.rollback()
+            raise ValueError("Неизвестный ID модели")
+        conn.execute("UPDATE  models  SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (model_id,))
+        conn.commit()
+    return get_active_model()
+
+def delete_note(user_id: int, note_id: int) -> bool:
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM notes WHERE user_id = ? AND id = ?",
+            (user_id, note_id)
+        )
+    return cur.rowcount > 0
+
+db3.py
+"""
+db.py — слой данных для DailyZodiakBot.
+
+Таблица users:
+  - user_id (PK)             — Telegram user id
+  - sign                     — знак зодиака (строка из списка)
+  - notify_hour INTEGER      — час суток (0..23), когда слать сообщение
+  - subscribed INTEGER       — 1/0 — подписка включена/выключена
+  - last_sent_date TEXT      — 'YYYY-MM-DD', чтобы не слать повторно за день
+
+Приёмы:
+  - отдельное подключение под каждую операцию (with _connect());
+  - PRAGMA: WAL + busy_timeout + row_factory=Row (см. Л3) [oai_citation:5‡L3.pdf](file-service://file-TzQZFVK22mksuAGPBby5ME);
+  - все SQL — параметризованные через "?" (никаких f-строк).
+"""
+
+from __future__ import annotations
+import sqlite3
+import logging
+from typing import Optional
+
+from config3 import DB_PATH, DEFAULT_NOTIFY_HOUR
+
+log = logging.getLogger(__name__)
+
+
+# ---------- подключение с «правильными» PRAGMA (см. Л3) ----------
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
+# WAL + busy_timeout уменьшают «database is locked», row_factory даёт доступ к полям по имени [oai_citation:6‡L3.pdf](file-service://file-TzQZFVK22mksuAGPBby5ME)
+
+
+# ---------- инициализация схемы ----------
+def init_db() -> None:
+    """
+    Создаёт таблицу users, если её нет.
+    Простейшие разумные дефолты; CHECK-ограничения оставим на стороне логики.
+    """
+    schema = """
+    CREATE TABLE IF NOT EXISTS users (
+        user_id        INTEGER PRIMARY KEY,
+        sign           TEXT,
+        notify_hour    INTEGER NOT NULL DEFAULT 9,
+        subscribed     INTEGER NOT NULL DEFAULT 1,
+        last_sent_date TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_users_hour ON users(notify_hour);
+    CREATE INDEX IF NOT EXISTS idx_users_sent ON users(last_sent_date);
+    """
+    with _connect() as conn:
+        conn.executescript(schema)
+    log.info("DB initialized: %s", DB_PATH)
+
+
+# ---------- upsert/получение пользователя ----------
+def ensure_user(user_id: int) -> None:
+    """Гарантируем наличие строки пользователя с дефолтами."""
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users(user_id, notify_hour, subscribed) VALUES (?, ?, 1)",
+            (user_id, DEFAULT_NOTIFY_HOUR)
+        )
+
+def get_user(user_id: int) -> Optional[sqlite3.Row]:
+    with _connect() as conn:
+        cur = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        return cur.fetchone()
+
+
+# ---------- настройки профиля ----------
+def set_sign(user_id: int, sign: str) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE users SET sign = ? WHERE user_id = ?", (sign, user_id))
+
+def set_notify_hour(user_id: int, hour: int) -> None:
+    hour = max(0, min(int(hour), 23))
+    with _connect() as conn:
+        conn.execute("UPDATE users SET notify_hour = ? WHERE user_id = ?", (hour, user_id))
+
+def set_subscribed(user_id: int, on: bool) -> None:
+    val = 1 if on else 0
+    with _connect() as conn:
+        conn.execute("UPDATE users SET subscribed = ? WHERE user_id = ?", (val, user_id))
+
+
+# ---------- рассылка: выборка и отметка отправки ----------
+def list_due_users(today_str: str, hour: int) -> list[sqlite3.Row]:
+    """
+    Вернёт пользователей, кому надо отправить: подписан, час совпал, ещё не отправляли сегодня, знак задан.
+    """
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT user_id, sign
+            FROM users
+            WHERE subscribed = 1
+              AND sign IS NOT NULL
+              AND notify_hour = ?
+              AND (last_sent_date IS NULL OR last_sent_date <> ?)
+            """,
+            (hour, today_str)
+        )
+        return cur.fetchall()
+
+def mark_sent_today(user_id: int, today_str: str) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE users SET last_sent_date = ? WHERE user_id = ?", (today_str, user_id))
+
+main.py
+import os
+import logging
+import requests
+from telebot import TeleBot, types
+from dotenv import load_dotenv
+from db import *
+
+# Загрузка переменных окружения и инициализация бота
+load_dotenv()
+bot = TeleBot(os.getenv('TOKEN'))
+
+# Настройка логирования для отслеживания действий бота
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+
+# --- Вспомогательные функции ---
+
+def parse_ints_from_text(text: str) -> list[int]:
+    """
+    Извлекает целые числа из текста, поддерживая разные разделители.
+    Игнорирует команды, начинающиеся с '/'.
+    """
+    # Заменяем запятые на пробелы для унификации
+    text = text.replace(",", " ")
+    # Разбиваем текст на токены и отфильтровываем команды
+    tokens = [t for t in text.split() if not t.startswith("/")]
+
+    nums = []
+    for t in tokens:
+        # Убираем возможный знак минуса для проверки на число
+        cleaned_token = t.strip().lstrip("-")
+        if cleaned_token.isdigit():  # Проверяем, является ли токен числом
+            nums.append(int(t))
+    return nums
+
+
+def make_main_kb() -> types.ReplyKeyboardMarkup:
+    """Создает основную Reply-клавиатуру с кнопками."""
+    # Создаём клавиатуру с автоподгонкой размера
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    # Добавляем кнопки по рядам
+    kb.row("О боте", "Сумма", "Погода (Москва)")
+    # НОВЫЕ КНОПКИ ИЗ ДОМАШНЕГО ЗАДАНИЯ
+    kb.row("/show", "/hide")
+    kb.row("/help")
+    return kb
+
+
+# Словарь для кодов погоды от Open-Meteo
+WMO_DESC = {
+    0: "Ясно", 1: "В осн. ясно", 2: "Переменная облачность", 3: "Пасмурно",
+    45: "Туман", 48: "Изморозь", 51: "Морось", 53: "Морось", 55: "Сильная морось",
+    61: "Дождь", 63: "Дождь", 65: "Сильный дождь", 71: "Снег",
+    80: "Ливни", 95: "Гроза"
+}
+
+
+def fetch_weather_moscow_open_meteo() -> str:
+    """Запрашивает и форматирует данные о погоде для Москвы."""
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": 55.7558, "longitude": 37.6173,
+        "current": "temperature_2m,weather_code",
+        "timezone": "Europe/Moscow"
+    }
+    try:
+        r = requests.get(url, params=params, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        cur = data["current"]
+        temp = round(cur["temperature_2m"])
+        code = int(cur.get("weather_code", 0))
+        return f"Москва: сейчас {temp}°C, {WMO_DESC.get(code, 'нет данных о погоде')}"
+    except requests.exceptions.RequestException:
+        return "Не удалось получить погоду (сеть)."
+    except (KeyError, TypeError, ValueError):
+        return "Ответ погоды в неожидаемом формате."
+
+
+# --- Обработчики команд и сообщений ---
+
+@bot.message_handler(commands=['start', 'help'])
+def start_help(m: types.Message):
+    """Обработчик команд /start и /help, отправляет приветствие и клавиатуру."""
+    welcome_text = (
+        "Привет! Я тестовый бот. "
+        "Нажми на одну из кнопок в меню для взаимодействия."
+    )
+    bot.send_message(m.chat.id, welcome_text, reply_markup=make_main_kb())
+
+
+# --- НОВАЯ КОМАНДА /max ИЗ ДОМАШНЕГО ЗАДАНИЯ ---
+@bot.message_handler(commands=['max'])
+def cmd_max(m: types.Message):
+    """Находит максимальное число из переданных."""
+    logging.info(f"/max от {m.from_user.first_name} ({m.from_user.id}): {m.text}")
+    nums = parse_ints_from_text(m.text)
+    logging.info(f"Распознаны числа: {nums}")
+
+    if not nums:
+        bot.reply_to(m, "Пожалуйста, укажите числа через пробел или запятую. Пример: /max 2 3 10")
+    else:
+        bot.reply_to(m, f"Максимум: {max(nums)}")
+
+
+@bot.message_handler(commands=['sum'])
+def cmd_sum(m: types.Message):
+    """Суммирует числа, переданные в сообщении."""
+    logging.info(f"/sum от {m.from_user.first_name} ({m.from_user.id}): {m.text}")
+    nums = parse_ints_from_text(m.text)
+    logging.info(f"Распознаны числа: {nums}")
+    bot.reply_to(m, f"Сумма: {sum(nums)}" if nums else "Пример: /sum 2 3 10")
+
+
+# --- ОБНОВЛЕННЫЕ КОМАНДЫ ДЛЯ РАБОТЫ С КЛАВИАТУРОЙ ---
+@bot.message_handler(commands=['hide'])
+def hide_kb(m: types.Message):
+    """Прячет Reply-клавиатуру."""
+    rm = types.ReplyKeyboardRemove()
+    bot.send_message(m.chat.id, "Спрятал клавиатуру.", reply_markup=rm)
+
+
+@bot.message_handler(commands=['show'])
+def show_kb(m: types.Message):
+    """Показывает Reply-клавиатуру."""
+    bot.send_message(m.chat.id, "Вот клавиатура:", reply_markup=make_main_kb())
+
+
+# --- ОБНОВЛЕННАЯ КОМАНДА /confirm ИЗ ДОМАШНЕГО ЗАДАНИЯ ---
+@bot.message_handler(commands=['confirm'])
+def confirm_cmd(m: types.Message):
+    """Отправляет Inline-кнопки для подтверждения."""
+    kb = types.InlineKeyboardMarkup()
+    kb.add(
+        types.InlineKeyboardButton("Да", callback_data="save:yes"),
+        types.InlineKeyboardButton("Нет", callback_data="save:no"),
+        # Новая кнопка "Отмена"
+        types.InlineKeyboardButton("Отмена", callback_data="save:later"),
+    )
+    # Обновленный текст сообщения
+    bot.send_message(m.chat.id, "Сохранить изменения?", reply_markup=kb)
+
+
+# --- ОБНОВЛЕННЫЙ ОБРАБОТЧИК ДЛЯ INLINE-КНОПОК ---
+@bot.callback_query_handler(func=lambda c: c.data.startswith("save:"))
+def on_confirm(c: types.CallbackQuery):
+    """Обрабатывает нажатия на Inline-кнопки."""
+    # Извлекаем выбор пользователя
+    choice = c.data.split(":", 1)[1]
+
+    # Отправляем "часики" на нажатой кнопке
+    bot.answer_callback_query(c.id, "Принято!")
+
+    # Убираем inline-кнопки из сообщения
+    bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=None)
+
+    # Отправляем результат в зависимости от выбора
+    if choice == "yes":
+        bot.send_message(c.message.chat.id, "Готово!")
+    elif choice == "no":
+        bot.send_message(c.message.chat.id, "Отменено.")
+    elif choice == "later":
+        bot.send_message(c.message.chat.id, "Отложено.")
+
+
+# --- Обработчики кнопок Reply-клавиатуры ---
+@bot.message_handler(func=lambda m: m.text == "О боте")
+def kb_about(m: types.Message):
+    bot.reply_to(m, "Я умею: /start, /help, /sum, /max, /hide, /show, /confirm")
+
+
+@bot.message_handler(func=lambda m: m.text == "Сумма")
+def kb_sum(m: types.Message):
+    """Запускает сценарий суммирования чисел."""
+    bot.send_message(m.chat.id, "Введите числа через пробел или запятую:")
+    bot.register_next_step_handler(m, on_sum_numbers)
+
+
+def on_sum_numbers(m: types.Message):
+    """Получает числа и считает сумму."""
+    nums = parse_ints_from_text(m.text)
+    if not nums:
+        bot.reply_to(m, "Не вижу чисел. Пример: 2 3 10 или 2, 3, -5")
+    else:
+        bot.reply_to(m, f"Сумма: {sum(nums)}")
+
+
+@bot.message_handler(func=lambda m: m.text == "Погода (Москва)")
+def kb_weather_moscow(m: types.Message):
+    """Отправляет погоду для Москвы по нажатию кнопки."""
+    bot.send_message(m.chat.id, fetch_weather_moscow_open_meteo())
+
+@bot.message_handler(commands=["models"])
+def cmd_models(message: types.Message) -> None:
+    items = list_models()
+    if not items:
+        bot.reply_to(message, "Список моделей пуст.")
+        return
+    lines = ["Доступные модели:"]
+    for m in items:
+        star = "★" if m["active"] else " "
+        lines.append(f"{star} {m['id']}. {m['label']}  [{m['key']}]")
+    lines.append("\nАктивировать: /model <ID>")
+    bot.reply_to(message, "\n".join(lines))
+
+@bot.message_handler(commands=['model'])
+def cmd_model(message: types.Message)->None:
+    arg = message.text.replace("/model" , "" , 1).strip()
+    if not arg:
+        active = get_active_model()
+        bot.reply_to(message , f"Текущая активная моедль: {active['label']} [{active['key']}]\n(сменить: /model <ID> или /models)")
+        return
+    if not arg.isdigit():
+        bot.reply_to(message, "Использование: /model <ID из /models>")
+        return
+    try:
+        active = set_active_model(int(arg))
+        bot.reply_to(message, f"Активная модель переключена: {active['label']} [{active["key"]}]")
+    except ValueError:
+        bot.reply_to(message, "Неизвестный ID модели. Сначала /models.")
+
+
+@bot.message_handler(commands=['start', 'help'])
+def cmd_start(message: types.Message) -> None:
+    """
+
+    """
+    text = (
+        "привет! это заметочник на SQLite. \n\n"
+        "команда: \n"
+        "/note_add <текст>\n"
+        "/note_list [N]\n"
+        "/note_find <подстрока>\n"
+        "/note_edit <id> <текст>\n"
+        "/note_del <id>\n"
+        "/note_count\n"
+        "/note_export\n"
+        "note_stats [days]\n"
+        "/models\n"
+        "/model <id>\n"
+    )
+
+# --- Основной цикл ---
+if __name__ == '__main__':
+    logging.info("Бот запущен")
+    bot.infinity_polling(skip_pending=True)
+
+main2.py
+import os
+from dotenv import load_dotenv
+import telebot
+import time
+import db
+from datetime import datetime
+
+# Загрузка переменных окружения
+load_dotenv()
+TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    raise RuntimeError("В .env файле нет TOKEN")
+
+bot = telebot.TeleBot(TOKEN)
+
+# Инициализация базы данных при запуске
+db.init_db()
+
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    welcome_text = f"""
+👋 Привет, {message.from_user.first_name}!
+
+Я бот для заметок. Я помогу тебе сохранять важную информацию.
+Все твои заметки хранятся в базе данных и доступны только тебе.
+
+Используй /help для списка команд.
+"""
+    bot.reply_to(message, welcome_text)
+
+
+@bot.message_handler(commands=['help'])
+def help_cmd(message):
+    help_text = """
+📝 **Доступные команды:**
+
+/note\_add `<текст>` - Добавить заметку
+/note\_list - Показать все заметки
+/note\_find `<запрос>` - Найти заметку
+/note\_show `<id>` - Показать полную заметку
+/note\_edit `<id>` `<новый текст>` - Изменить заметку
+/note\_del `<id>` - Удалить заметку
+
+💡 **Примеры:**
+/note\_add Купить молоко
+/note\_find молоко
+/note\_edit 5 Купить молоко и хлеб
+/note\_del 5
+"""
+    bot.reply_to(message, help_text, parse_mode='Markdown')
+
+
+@bot.message_handler(commands=['note_add'])
+def note_add(message):
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        bot.reply_to(message, "❌ Формат: /note_add <текст заметки>")
+        return
+
+    text = parts[1].strip()
+
+    try:
+        note_id = db.add_note(message.from_user.id, text)
+        bot.reply_to(message, f"✅ Заметка #{note_id} добавлена:\n\n{text}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при добавлении заметки: {str(e)}")
+
+
+@bot.message_handler(commands=['note_list'])
+def note_list(message):
+    try:
+        notes = db.list_notes(message.from_user.id)
+
+        if not notes:
+            bot.reply_to(message, "📭 У вас пока нет заметок.\nИспользуйте /note_add <текст> для добавления.")
+            return
+
+        response = f"📋 **Ваши заметки** (последние {len(notes)}):\n\n"
+
+        for note in notes:
+            # Форматируем дату
+            created_at = datetime.fromisoformat(note['created_at']).strftime('%d.%m.%Y %H:%M')
+            # Ограничиваем длину текста для списка
+            text = note['text']
+            display_text = text[:50] + "..." if len(text) > 50 else text
+            response += f"#{note['id']} _{created_at}_\n{display_text}\n\n"
+
+        # Telegram имеет лимит на длину сообщения
+        if len(response) > 4000:
+            response = response[:3900] + "\n\n... _список обрезан_"
+
+        bot.reply_to(message, response, parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при получении заметок: {str(e)}")
+
+
+@bot.message_handler(commands=['note_find'])
+def note_find(message):
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ Формат: /note_find <поисковый запрос>")
+        return
+
+    query = parts[1].strip()
+
+    try:
+        notes = db.find_notes(message.from_user.id, query)
+
+        if not notes:
+            bot.reply_to(message, f"🔍 Заметки по запросу '{query}' не найдены.")
+            return
+
+        response = f"🔍 **Найдено заметок:** {len(notes)}\nПо запросу: _{query}_\n\n"
+
+        for note in notes:
+            created_at = datetime.fromisoformat(note['created_at']).strftime('%d.%m.%Y %H:%M')
+            text = note['text']
+            # Подсвечиваем найденный текст
+            display_text = text[:100] + "..." if len(text) > 100 else text
+            response += f"#{note['id']} _{created_at}_\n{display_text}\n\n"
+
+        if len(response) > 4000:
+            response = response[:3900] + "\n\n... _список обрезан_"
+
+        bot.reply_to(message, response, parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при поиске: {str(e)}")
+
+
+@bot.message_handler(commands=['note_show'])
+def note_show(message):
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ Формат: /note_show <id>")
+        return
+
+    try:
+        note_id = int(parts[1])
+    except ValueError:
+        bot.reply_to(message, "❌ ID должен быть числом.")
+        return
+
+    try:
+        note = db.get_note_by_id(message.from_user.id, note_id)
+
+        if note:
+            created_at = datetime.fromisoformat(note['created_at']).strftime('%d.%m.%Y %H:%M')
+            response = f"📝 **Заметка #{note['id']}**\n"
+            response += f"_Создана: {created_at}_\n\n"
+            response += note['text']
+            bot.reply_to(message, response, parse_mode='Markdown')
+        else:
+            bot.reply_to(message, f"❌ Заметка #{note_id} не найдена.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка: {str(e)}")
+
+
+@bot.message_handler(commands=['note_edit'])
+def note_edit(message):
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        bot.reply_to(message, "❌ Формат: /note_edit <id> <новый текст>")
+        return
+
+    try:
+        note_id = int(parts[1])
+        new_text = parts[2].strip()
+    except ValueError:
+        bot.reply_to(message, "❌ ID должен быть числом.")
+        return
+
+    if not new_text:
+        bot.reply_to(message, "❌ Текст заметки не может быть пустым.")
+        return
+
+    try:
+        if db.update_note(message.from_user.id, note_id, new_text):
+            bot.reply_to(message, f"✅ Заметка #{note_id} изменена:\n\n{new_text}")
+        else:
+            bot.reply_to(message, f"❌ Заметка #{note_id} не найдена или не принадлежит вам.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при редактировании: {str(e)}")
+
+
+@bot.message_handler(commands=['note_del'])
+def note_del(message):
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "❌ Формат: /note_del <id>")
+        return
+
+    try:
+        note_id = int(parts[1])
+    except ValueError:
+        bot.reply_to(message, "❌ ID должен быть числом.")
+        return
+
+    try:
+        if db.delete_note(message.from_user.id, note_id):
+            bot.reply_to(message, f"✅ Заметка #{note_id} удалена.")
+        else:
+            bot.reply_to(message, f"❌ Заметка #{note_id} не найдена или не принадлежит вам.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при удалении: {str(e)}")
+
+@bot.message_handler(commands=['note_count'])
+def note_count(message):
+    try:
+        count = db.count_notes(message.from_user.id)
+        bot.reply_to(message, f"📊 У вас всего {count} заметок.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при подсчете заметок: {str(e)}")
+
+
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    bot.reply_to(message, "❓ Неизвестная команда. Используй /help для списка команд.")
+
+
+if __name__ == "__main__":
+    print("🤖 Бот запускается...")
+    print("✅ База данных инициализирована")
+    print(f"📁 Путь к БД: {os.getenv('DB_PATH', 'bot.db')}")
+    print("📡 Начинаю получение обновлений...")
+
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            print(f"❌ Ошибка: {e}")
+            time.sleep(5)
+
+main3.py
+"""
+main.py — DailyZodiakBot (развлекательный контент без внешних API).
+
+Команды:
+  /start                  — регистрация, выбор знака и часа
+  /set_sign <знак>        — установить знак (или нажать кнопку с названием)
+  /set_time <0..23>       — час утра/дня для рассылки (по времени сервера)
+  /subscribe              — включить подписку
+  /unsubscribe            — выключить подписку
+  /me                     — мои настройки
+  /today                  — выслать «гороскоп дня» прямо сейчас
+  /signs                  — показать список знаков
+
+Рассылка:
+  - фоновый поток проверяет раз в минуту: кому отправить сейчас;
+  - условие: subscribed=1, notify_hour == now.hour, last_sent_date != today.
+"""
+
+from __future__ import annotations
+import logging
+import threading
+import time
+import hashlib
+from datetime import datetime, date
+
+import telebot
+from telebot import types
+
+import db3 as db
+from config3 import TOKEN, DEFAULT_NOTIFY_HOUR
+
+log = logging.getLogger(__name__)
+
+bot = telebot.TeleBot(TOKEN)
+db.init_db()  # создаём схемы, если их нет
+
+# ---------- справочник знаков: канон, синонимы, эмодзи ----------
+CANON_SIGNS = [
+    "овен", "телец", "близнецы", "рак", "лев", "дева",
+    "весы", "скорпион", "стрелец", "козерог", "водолей", "рыбы"
+]
+SIGN_EMOJI = {
+    "овен":"♈", "телец":"♉", "близнецы":"♊", "рак":"♋", "лев":"♌", "дева":"♍",
+    "весы":"♎", "скорпион":"♏", "стрелец":"♐", "козерог":"♑", "водолей":"♒", "рыбы":"♓"
+}
+# Примитивные англ. синонимы — чтобы не спотыкались:
+SIGN_ALIASES = {
+    "aries":"овен", "taurus":"телец", "gemini":"близнецы", "cancer":"рак", "leo":"лев", "virgo":"дева",
+    "libra":"весы", "scorpio":"скорпион", "sagittarius":"стрелец", "capricorn":"козерог", "aquarius":"водолей", "pisces":"рыбы"
+}
+
+def normalize_sign(text: str) -> str | None:
+    t = (text or "").strip().lower()
+    t = t.replace("ё", "е")
+    if t in CANON_SIGNS:
+        return t
+    return SIGN_ALIASES.get(t)
+
+def sign_keyboard() -> types.ReplyKeyboardMarkup:
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    # 4 строки по 3 знака — компактно
+    rows = [
+        ["овен", "телец", "близнецы"],
+        ["рак", "лев", "дева"],
+        ["весы", "скорпион", "стрелец"],
+        ["козерог", "водолей", "рыбы"]
+    ]
+    for r in rows:
+        kb.row(*r)
+    kb.row("/signs", "/me")
+    return kb
+# Используем ReplyKeyboard для быстрого выбора (паттерн из занятий по кнопкам) [oai_citation:7‡L2_Текст к лекции.pdf](file-service://file-6kQEVmhZuKhD1nBDo1XNnq)
+
+
+# ---------- генерация «гороскопа» без API (детерминированно на (sign, date)) ----------
+INTRO = [
+    "Сегодня вас ждёт", "День сулит", "Утро принесёт", "В первой половине дня вероятно",
+    "Хорошее время для", "Подходящий момент для"
+]
+FOCUS = ["работы", "личных дел", "общения", "обучения", "творчества", "маленьких поездок"]
+ADVICE = [
+    "действуйте спокойно и без спешки", "обратите внимание на детали", "держите курс и не отвлекайтесь",
+    "не спорьте из принципа", "подумайте о пользе привычек", "не бойтесь попросить помощи"
+]
+LUCK = [
+    "удача на вашей стороне", "окружающие настроены дружелюбно", "случай поможет тем, кто готов",
+    "небольшой риск себя оправдает", "поддержка придёт вовремя", "день подойдёт для новых начал"
+]
+COLOR = ["синий", "зелёный", "жёлтый", "красный", "фиолетовый", "белый", "оранжевый"]
+NUMBER = [3, 4, 5, 6, 7, 8, 9]
+
+def _pick(seq: list, seed: bytes, salt: str) -> str:
+    h = hashlib.md5(seed + salt.encode("utf-8")).hexdigest()
+    idx = int(h, 16) % len(seq)
+    return str(seq[idx])
+
+def make_daily_text(sign: str, for_date: date) -> str:
+    """
+    Генерирует 3–4 коротких фразы и пару «фишек» (цвет, число).
+    Детерминированно для (sign, date) — без внешних API.
+    """
+    iso = for_date.isoformat().encode("utf-8")
+    sgn = sign.encode("utf-8")
+    intro = _pick(INTRO, sgn+iso, ":intro")
+    focus = _pick(FOCUS, sgn+iso, ":focus")
+    advice = _pick(ADVICE, sgn+iso, ":advice")
+    luck = _pick(LUCK, sgn+iso, ":luck")
+    color = _pick(COLOR, sgn+iso, ":color")
+    number = _pick(NUMBER, sgn+iso, ":num")
+
+    emoji = SIGN_EMOJI.get(sign, "")
+    return (
+        f"{emoji} *{sign.capitalize()}* — {for_date.strftime('%Y-%m-%d')}\n"
+        f"{intro} акцент на *{focus}*; {luck}. Советы: {advice}.\n\n"
+        f"Счастливый цвет: *{color}*, число дня: *{number}*.\n"
+        f"_Развлекательный контент._"
+    )
+
+
+# ---------- вспомогательные утилиты ----------
+def user_mention(m: types.Message) -> str:
+    u = m.from_user
+    return f"{u.first_name or ''}".strip() or "друг"
+
+def parse_hour(token: str) -> int | None:
+    try:
+        h = int(token)
+        return h if 0 <= h <= 23 else None
+    except Exception:
+        return None
+
+
+# ---------- команды ----------
+@bot.message_handler(commands=["start", "help"])
+def cmd_start(message: types.Message) -> None:
+    db.ensure_user(message.from_user.id)
+    text = (
+        "Привет! Я пришлю *гороскоп дня* без всяких API — для настроения.\n\n"
+        "Сначала выбери знак и час отправки:\n"
+        "• /set_sign <знак>  или нажми кнопку со знаком\n"
+        "• /set_time <0..23> час (по времени сервера)\n\n"
+        "Полезное:\n"
+        "• /today — прислать на сегодня\n"
+        "• /subscribe и /unsubscribe\n"
+        "• /me — показать мои настройки\n"
+        "• /signs — список знаков\n"
+    )
+    bot.send_message(message.chat.id, text, reply_markup=sign_keyboard(), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["signs"])
+def cmd_signs(message: types.Message) -> None:
+    lines = [f"{SIGN_EMOJI[s]} {s.capitalize()}" for s in CANON_SIGNS]
+    bot.reply_to(message, "Доступные знаки:\n" + "\n".join(lines))
+
+
+@bot.message_handler(commands=["set_sign"])
+def cmd_set_sign(message: types.Message) -> None:
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, "Формат: /set_sign <знак>  (например: /set_sign лев)")
+        return
+    s = normalize_sign(parts[1])
+    if not s:
+        bot.reply_to(message, "Не узнал знак. Напиши один из: " + ", ".join(CANON_SIGNS))
+        return
+    db.ensure_user(message.from_user.id)
+    db.set_sign(message.from_user.id, s)
+    bot.reply_to(message, f"Знак сохранён: {SIGN_EMOJI[s]} {s.capitalize()}")
+
+
+@bot.message_handler(commands=["set_time"])
+def cmd_set_time(message: types.Message) -> None:
+    parts = message.text.split(maxsplit=1)
+    hour = parse_hour(parts[1]) if len(parts) == 2 else None
+    if hour is None:
+        bot.reply_to(message, "Формат: /set_time <час 0..23>  (например: /set_time 9)")
+        return
+    db.ensure_user(message.from_user.id)
+    db.set_notify_hour(message.from_user.id, hour)
+    bot.reply_to(message, f"Час отправки сохранён: {hour}:00")
+
+
+@bot.message_handler(commands=["subscribe"])
+def cmd_subscribe(message: types.Message) -> None:
+    db.ensure_user(message.from_user.id)
+    db.set_subscribed(message.from_user.id, True)
+    bot.reply_to(message, "Подписка включена. Я пришлю сообщение в заданный час.")
+
+
+@bot.message_handler(commands=["unsubscribe"])
+def cmd_unsubscribe(message: types.Message) -> None:
+    db.ensure_user(message.from_user.id)
+    db.set_subscribed(message.from_user.id, False)
+    bot.reply_to(message, "Подписка выключена.")
+
+
+@bot.message_handler(commands=["me"])
+def cmd_me(message: types.Message) -> None:
+    row = db.get_user(message.from_user.id)
+    if not row:
+        bot.reply_to(message, "Ещё не настроено. Используй /set_sign и /set_time.")
+        return
+    sign = row["sign"] or "не задан"
+    hour = row["notify_hour"]
+    sub = "включена" if row["subscribed"] else "выключена"
+    bot.reply_to(
+        message,
+        f"Мои настройки:\nЗнак: {sign}\nЧас: {hour}:00\nПодписка: {sub}"
+    )
+
+
+@bot.message_handler(commands=["today"])
+def cmd_today(message: types.Message) -> None:
+    db.ensure_user(message.from_user.id)
+    row = db.get_user(message.from_user.id)
+    if not row or not row["sign"]:
+        bot.reply_to(message, "Сначала /set_sign <знак>.")
+        return
+    txt = make_daily_text(row["sign"], date.today())
+    bot.send_message(message.chat.id, txt, parse_mode="Markdown")
+
+
+# ---------- обработка нажатий по клавиатуре со знаками ----------
+@bot.message_handler(func=lambda m: (m.text or "").strip().lower() in CANON_SIGNS)
+def kb_pick_sign(message: types.Message) -> None:
+    s = (message.text or "").strip().lower()
+    db.ensure_user(message.from_user.id)
+    db.set_sign(message.from_user.id, s)
+    bot.reply_to(message, f"Знак сохранён: {SIGN_EMOJI[s]} {s.capitalize()}")
+
+
+# ---------- планировщик ежедневной отправки ----------
+def scheduler_loop() -> None:
+    log.info("Scheduler started")
+    while True:
+        now = datetime.now()               # время сервера
+        today_str = now.strftime("%Y-%m-%d")
+        hour = now.hour
+        try:
+            due = db.list_due_users(today_str, hour)
+            for u in due:
+                # Сгенерировать текст и отправить:
+                txt = make_daily_text(u["sign"], now.date())
+                try:
+                    bot.send_message(u["user_id"], txt, parse_mode="Markdown")
+                except Exception as e:
+                    log.warning("Send failed to %s: %r", u["user_id"], e)
+                # Отметить отправку за сегодня:
+                db.mark_sent_today(u["user_id"], today_str)
+        except Exception as e:
+            log.exception("Scheduler error: %r", e)
+        time.sleep(60)  # проверяем раз в минуту
+
+
+def start_scheduler() -> None:
+    t = threading.Thread(target=scheduler_loop, name="daily-scheduler", daemon=True)
+    t.start()
+
+
+# ---------- меню команд в клиенте (см. Л2) ----------
+def setup_bot_commands() -> None:
+    cmds = [
+        types.BotCommand("start", "Начало и помощь"),
+        types.BotCommand("set_sign", "Установить знак зодиака"),
+        types.BotCommand("set_time", "Установить час отправки"),
+        types.BotCommand("today", "Прислать на сегодня"),
+        types.BotCommand("subscribe", "Включить подписку"),
+        types.BotCommand("unsubscribe", "Выключить подписку"),
+        types.BotCommand("me", "Мои настройки"),
+        types.BotCommand("signs", "Список знаков"),
+    ]
+    bot.set_my_commands(cmds)
+
+
+# ---------- точка входа ----------
+if __name__ == "__main__":
+    setup_bot_commands()        # удобство для пользователей [oai_citation:8‡L2_Текст к лекции.pdf](file-service://file-6kQEVmhZuKhD1nBDo1XNnq)
+    start_scheduler()           # запускаем фоновую проверку
+    bot.infinity_polling(skip_pending=True)  # запуск long polling (паттерн Л2/Л3) [oai_citation:9‡L2_Текст к лекции.pdf](file-service://file-6kQEVmhZuKhD1nBDo1XNnq) [oai_citation:10‡L3.pdf](file-service://file-TzQZFVK22mksuAGPBby5ME)
+
+
