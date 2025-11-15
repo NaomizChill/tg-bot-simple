@@ -37,12 +37,6 @@ def chat_once(msgs: list[dict], model: str, temperature: float = 0.2, max_tokens
 load_dotenv()
 bot = TeleBot(os.getenv('TOKEN'))
 
-# Настройка логирования для отслеживания действий бота
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 
 # --- Функции для формирования сообщений для LLM ---
 
@@ -450,7 +444,22 @@ def setup_bot_commands():
 
 # --- Основной цикл ---
 if __name__ == '__main__':
+    # Настройка логирования должна быть здесь
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
     logging.info("Бот запущен")
-    db.init_db()  # <-- Важно! Инициализируем базу данных
-    setup_bot_commands() # <-- Устанавливаем команды в меню
+
+    # Инициализация БД тоже здесь
+    try:
+        from db import init_db
+
+        init_db()
+        logging.info("База данных инициализирована.")
+    except Exception as e:
+        logging.error(f"Ошибка инициализации БД: {e}")
+
+    # Запуск бота
     bot.infinity_polling(skip_pending=True)

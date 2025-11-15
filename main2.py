@@ -32,7 +32,7 @@ def start(message):
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    help_text = """
+    help_text = r"""
 📝 **Доступные команды:**
 
 /note\_add `<текст>` - Добавить заметку

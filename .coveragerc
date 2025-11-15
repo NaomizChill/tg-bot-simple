@@ -1,0 +1,21 @@
+# .coveragerc
+[run]
+branch = True
+source =
+    db
+    main
+
+[report]
+omit =
+    tests/*
+    */venv/*
+    config.py
+    cleanup_coverage.py
+    conftest.py
+
+show_missing = True
+skip_covered = False
+precision = 1
+
+[html]
+directory = htmlcov
