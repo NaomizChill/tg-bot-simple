@@ -27,3 +27,15 @@ if not TOKEN:
     raise RuntimeError("Нет TOKEN в .env — получите токен у @BotFather и положите его в .env")
 
 __all__ = ["TOKEN", "DB_PATH", "DEFAULT_NOTIFY_HOUR", "LOG_LEVEL"]
+
+# Максимальная длина текста вопроса пользователя (в символах)
+MAX_PROMPT_CHARS_DEFAULT = 600
+# Показывать ли в ответе модели доп. инфо (футер)
+SHOW_MODEL_FOOTER_DEFAULT = True
+
+
+# --- Feature Toggles ---
+# Показать команду /debug_settings
+DEBUG_SETTINGS_SHOW = False
+# Включить команды /model и /models
+CMD_MODEL_ID_ENABLED = True

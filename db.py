@@ -20,6 +20,14 @@ def init_db():
         text TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS feature_toggles (
+        name TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1))
+    );
     CREATE TABLE IF NOT EXISTS models(
         id INTEGER PRIMARY KEY,
         key TEXT NOT NULL UNIQUE,
@@ -223,3 +231,58 @@ def get_user_character(user_id: int) -> dict:
         if not row:
             raise RuntimeError("Таблица characters пуста")
         return {"id": row["id"], "name": row["name"], "prompt": row["prompt"]}
+
+
+def get_setting_or_default(key: str, default: str) -> str:
+    """Возвращает динамический параметр по ключу. Если его нет - возвращает default."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        if row is None:
+            return default
+        return row["value"]
+
+
+def get_int_setting(key: str, default: int) -> int:
+    """Возвращает динамический параметр по ключу в виде int."""
+    raw = get_setting_or_default(key, str(default))
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def get_bool_setting(key: str, default: bool) -> bool:
+    """Возвращает динамический параметр по ключу в виде bool."""
+    raw = get_setting_or_default(key, "true" if default else "false")
+    raw_low = raw.lower()
+    if raw_low in ("1", "true", "yes", "on"):
+        return True
+    return False
+
+
+def is_feature_enabled(name: str, default: bool) -> bool:
+    """Возвращает состояние фиче-тоггла по имени (включен/выключен)."""
+    with _connect() as conn:
+        row = conn.execute("SELECT enabled FROM feature_toggles WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            return default
+        return bool(row["enabled"])
+
+
+def set_setting(key: str, value: str) -> None:
+    """Установить динамический параметр (UPSERT)."""
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+def set_feature_toggle(name: str, enabled: bool) -> None:
+    """Установить фиче-тоггл (UPSERT)."""
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO feature_toggles (name, enabled) VALUES (?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled",
+            (name, 1 if enabled else 0),
+        )

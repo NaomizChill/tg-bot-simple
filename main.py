@@ -3,11 +3,25 @@ import logging
 import requests
 from telebot import TeleBot, types
 from dotenv import load_dotenv
-
+from config3 import MAX_PROMPT_CHARS_DEFAULT, SHOW_MODEL_FOOTER_DEFAULT
+from db import get_int_setting, get_bool_setting
+from config3 import DEBUG_SETTINGS_SHOW, CMD_MODEL_ID_ENABLED
+from db import is_feature_enabled
 import db
 from db import *
 import random
+from db import set_setting, set_feature_toggle # и другие
+from logging_config import setup_logging
+from metrics import metric, timed
+log = logging.getLogger(__name__)
 
+# Настраиваем логирование ДО того, как делаем что-либо еще
+setup_logging()
+
+# Создаем логгер для текущего модуля
+log = logging.getLogger(__name__)
+
+log.info("Старт приложения (инициализация бота)")
 
 # --- Заглушки для LLM (замените на вашу реализацию) ---
 
@@ -110,7 +124,7 @@ WMO_DESC = {
     80: "Ливни", 95: "Гроза"
 }
 
-
+@timed("weather_api_ms", logger=log)
 def fetch_weather_moscow_open_meteo() -> str:
     """Запрашивает и форматирует данные о погоде для Москвы."""
     url = "https://api.open-meteo.com/v1/forecast"
@@ -137,6 +151,8 @@ def fetch_weather_moscow_open_meteo() -> str:
 
 @bot.message_handler(commands=['start', 'help'])
 def start_help(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Отправляет приветствие и описание новых команд."""
     welcome_text = (
         "Привет! Я бот с разными AI-персонажами.\n\n"
@@ -153,9 +169,81 @@ def start_help(m: types.Message):
     bot.send_message(m.chat.id, welcome_text, reply_markup=make_main_kb(), parse_mode="Markdown")
 
 
+@bot.message_handler(commands=["stats"])
+def handle_stats(message: types.Message) -> None:
+    """Показывает все накопленные метрики."""
+    log.info(f"Команда /stats от user_id={message.from_user.id}")
+    stats = metric.snapshot()
+    counters = stats["counters"]
+    latencies = stats["latencies"]
+
+    lines = ["**Статистика бота**\n"]
+    lines.append("**Счетчики:**")
+    if counters:
+        for name, value in sorted(counters.items()):
+            lines.append(f"- `{name}`: {value}")
+    else:
+        lines.append("- нет данных")
+
+    lines.append("\n**Замеры времени (мс):**")
+    if latencies:
+        for name, data in sorted(latencies.items()):
+            lines.append(f"- `{name}`: count={data['count']}, avg={data['avg_ms']:.0f}, "
+                         f"min={data['min_ms']}, max={data['max_ms']}")
+    else:
+        lines.append("- нет данных")
+
+    bot.reply_to(message, "\n".join(lines), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=['set_setting'])
+def cmd_set_setting(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
+    """Админ-команда: установить динамический параметр. Формат: /set_setting ключ=значение"""
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2 or "=" not in parts[1]:
+        bot.reply_to(message, "Использование: /set_setting ключ=значение")
+        return
+
+    key, value = parts[1].split("=", 1)
+    key, value = key.strip(), value.strip()
+
+    if not key:
+        bot.reply_to(message, "Ключ параметра не может быть пустым.")
+        return
+
+    set_setting(key, value)
+    bot.reply_to(message, f"Параметр '{key}' установлен в '{value}'")
+
+
+@bot.message_handler(commands=['set_toggle'])
+def cmd_set_toggle(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
+    """Админ-команда: включить/выключить фиче-тоггл. Формат: /set_toggle имя on/off"""
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        bot.reply_to(message, "Использование: /set_toggle <имя> on|off")
+        return
+
+    name = parts[1].strip()
+    state = parts[2].strip().lower()
+
+    if state not in ("on", "off"):
+        bot.reply_to(message, "Второй аргумент должен быть 'on' или 'off'.")
+        return
+
+    enabled = state == "on"
+    set_feature_toggle(name, enabled)
+    bot.reply_to(message, f"Feature-toggle '{name}' = {enabled}")
+
+
 # --- НОВАЯ КОМАНДА /max ИЗ ДОМАШНЕГО ЗАДАНИЯ ---
 @bot.message_handler(commands=['max'])
 def cmd_max(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Находит максимальное число из переданных."""
     logging.info(f"/max от {m.from_user.first_name} ({m.from_user.id}): {m.text}")
     nums = parse_ints_from_text(m.text)
@@ -169,6 +257,8 @@ def cmd_max(m: types.Message):
 
 @bot.message_handler(commands=['sum'])
 def cmd_sum(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Суммирует числа, переданные в сообщении."""
     logging.info(f"/sum от {m.from_user.first_name} ({m.from_user.id}): {m.text}")
     nums = parse_ints_from_text(m.text)
@@ -179,6 +269,8 @@ def cmd_sum(m: types.Message):
 # --- ОБНОВЛЕННЫЕ КОМАНДЫ ДЛЯ РАБОТЫ С КЛАВИАТУРОЙ ---
 @bot.message_handler(commands=['hide'])
 def hide_kb(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Прячет Reply-клавиатуру."""
     rm = types.ReplyKeyboardRemove()
     bot.send_message(m.chat.id, "Спрятал клавиатуру.", reply_markup=rm)
@@ -186,6 +278,8 @@ def hide_kb(m: types.Message):
 
 @bot.message_handler(commands=['show'])
 def show_kb(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Показывает Reply-клавиатуру."""
     bot.send_message(m.chat.id, "Вот клавиатура:", reply_markup=make_main_kb())
 
@@ -193,6 +287,8 @@ def show_kb(m: types.Message):
 # --- ОБНОВЛЕННАЯ КОМАНДА /confirm ИЗ ДОМАШНЕГО ЗАДАНИЯ ---
 @bot.message_handler(commands=['confirm'])
 def confirm_cmd(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Отправляет Inline-кнопки для подтверждения."""
     kb = types.InlineKeyboardMarkup()
     kb.add(
@@ -230,11 +326,15 @@ def on_confirm(c: types.CallbackQuery):
 # --- Обработчики кнопок Reply-клавиатуры ---
 @bot.message_handler(func=lambda m: m.text == "О боте")
 def kb_about(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     bot.reply_to(m, "Я умею: /start, /help, /sum, /max, /hide, /show, /confirm")
 
 
 @bot.message_handler(func=lambda m: m.text == "Сумма")
 def kb_sum(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Запускает сценарий суммирования чисел."""
     bot.send_message(m.chat.id, "Введите числа через пробел или запятую:")
     bot.register_next_step_handler(m, on_sum_numbers)
@@ -251,12 +351,19 @@ def on_sum_numbers(m: types.Message):
 
 @bot.message_handler(func=lambda m: m.text == "Погода (Москва)")
 def kb_weather_moscow(m: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Отправляет погоду для Москвы по нажатию кнопки."""
     bot.send_message(m.chat.id, fetch_weather_moscow_open_meteo())
 
 @bot.message_handler(commands=["models"])
 def cmd_models(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     items = list_models()
+    if not is_feature_enabled("model_commands", CMD_MODEL_ID_ENABLED):
+        bot.reply_to(message, "Команда временно отключена.")
+        return
     if not items:
         bot.reply_to(message, "Список моделей пуст.")
         return
@@ -269,7 +376,12 @@ def cmd_models(message: types.Message) -> None:
 
 @bot.message_handler(commands=['model'])
 def cmd_model(message: types.Message)->None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     arg = message.text.replace("/model" , "" , 1).strip()
+    if not is_feature_enabled("model_commands", CMD_MODEL_ID_ENABLED):
+        bot.reply_to(message, "Команда временно отключена.")
+        return
     if not arg:
         active = get_active_model()
         bot.reply_to(message , f"Текущая активная моедль: {active['label']} [{active['key']}]\n(сменить: /model <ID> или /models)")
@@ -286,6 +398,8 @@ def cmd_model(message: types.Message)->None:
 
 @bot.message_handler(commands=['start', 'help'])
 def cmd_start(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """
 
     """
@@ -309,6 +423,8 @@ def cmd_start(message: types.Message) -> None:
 
 @bot.message_handler(commands=['characters'])
 def cmd_characters(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Показывает список персонажей."""
     items = list_characters()
     if not items:
@@ -326,6 +442,8 @@ def cmd_characters(message: types.Message) -> None:
 
 @bot.message_handler(commands=['character'])
 def cmd_character(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Устанавливает активного персонажа."""
     arg = message.text.replace("/character", "", 1).strip()
     if not arg:
@@ -344,6 +462,8 @@ def cmd_character(message: types.Message) -> None:
 
 @bot.message_handler(commands=['whoami'])
 def cmd_whoami(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Показывает активную модель и персонажа."""
     model = get_active_model()
     character = get_user_character(message.from_user.id)
@@ -354,8 +474,32 @@ def cmd_whoami(message: types.Message) -> None:
     bot.reply_to(message, text, parse_mode="Markdown")
 
 
+@bot.message_handler(commands=["debug_settings"])
+def cmd_debug_settings(message: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
+    """Показывает настройки, если фиче-тоггл debug_settings включен."""
+    # ---> Эта команда полностью управляется фиче-тогглом <---
+    if not is_feature_enabled("debug_settings", DEBUG_SETTINGS_SHOW):
+        bot.reply_to(message, "Эта команда отключена.")
+        return
+
+    max_len = get_int_setting("max_prompt_chars", MAX_PROMPT_CHARS_DEFAULT)
+    show_footer = get_bool_setting("show_model_footer", SHOW_MODEL_FOOTER_DEFAULT)
+    model_cmds = is_feature_enabled("model_commands", CMD_MODEL_ID_ENABLED)
+
+    text = (
+        f"max_prompt_chars = {max_len}\n"
+        f"show_model_footer = {show_footer}\n"
+        f"feature: model_commands = {model_cmds}\n"
+    )
+    bot.reply_to(message, text)
+
+
 @bot.message_handler(commands=['ask_random'])
 def cmd_ask_random(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Задает вопрос случайному персонажу."""
     q = message.text.replace("/ask_random", "", 1).strip()
     if not q:
@@ -377,6 +521,8 @@ def cmd_ask_random(message: types.Message) -> None:
 # --- Команда из домашнего задания ---
 @bot.message_handler(commands=['ask_model'])
 def cmd_ask_model(message: types.Message) -> None:
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Задает вопрос конкретной модели без смены активной."""
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
@@ -407,22 +553,30 @@ def cmd_ask_model(message: types.Message) -> None:
 
 @bot.message_handler(func=lambda message: True)
 def on_text_message(message: types.Message):
+    metric.counter("commands_total").inc()
+    metric.counter("character_requests_total").inc()
     """Обрабатывает текстовые сообщения как вопросы к LLM."""
-    # Игнорируем команды
     if message.text.startswith('/'):
-        # Можно добавить сообщение о неизвестной команде, если нужно
+        bot.reply_to(message, "Неизвестная команда. Используйте /help для списка команд.")
         return
+
+    max_len = get_int_setting("max_prompt_chars", MAX_PROMPT_CHARS_DEFAULT)
+    show_footer = get_bool_setting("show_model_footer", SHOW_MODEL_FOOTER_DEFAULT)
+
+    q = message.text.strip()[:max_len]
 
     try:
         bot.send_chat_action(message.chat.id, 'typing')
-        msgs = _build_messages(message.from_user.id, message.text[:600])
+        msgs = _build_messages(message.from_user.id, q)
         model_key = get_active_model()["key"]
         text, ms = chat_once(msgs, model=model_key)
         character = get_user_character(message.from_user.id)
-        bot.reply_to(message, f"{text}\n\n_({ms} мс; как: {character['name']})_", parse_mode="Markdown")
+
+        add_info = f"\n\n_({ms} мс; модель: {model_key}; как: {character['name']})_" if show_footer else ""
+        bot.reply_to(message, f"{text}{add_info}", parse_mode="Markdown")
+
     except Exception as e:
         bot.reply_to(message, f"Произошла ошибка: {e}")
-
 
 
 
@@ -438,28 +592,28 @@ def setup_bot_commands():
         types.BotCommand("whoami", "Текущие настройки"),
         types.BotCommand("ask_random", "Вопрос случайному персонажу"),
         types.BotCommand("ask_model", "Вопрос конкретной модели"),
+        types.BotCommand("stats", "Мониторинг бота"),
     ]
+    if is_feature_enabled("debug_settings", DEBUG_SETTINGS_SHOW):
+        cmds.append(types.BotCommand("debug_settings", "Показать настройки бота"))
+
     bot.set_my_commands(cmds)
+
 
 
 # --- Основной цикл ---
 if __name__ == '__main__':
-    # Настройка логирования должна быть здесь
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-    logging.info("Бот запущен")
-
-    # Инициализация БД тоже здесь
+    log.info("Настройка меню команд...")
     try:
-        from db import init_db
-
+        # Инициализируем базу данных перед настройкой команд
         init_db()
-        logging.info("База данных инициализирована.")
+        # Настраиваем меню с учетом фиче-тогглов
+        setup_bot_commands()
+        log.info("Меню команд успешно настроено.")
     except Exception as e:
-        logging.error(f"Ошибка инициализации БД: {e}")
+        # Используем наш новый логгер для записи ошибок
+        log.error(f"Не удалось выполнить предстартовую настройку: {e}", exc_info=True)
 
-    # Запуск бота
+    log.info("Запуск long polling...")
+    # Эта команда заставляет бота работать бесконечно
     bot.infinity_polling(skip_pending=True)
