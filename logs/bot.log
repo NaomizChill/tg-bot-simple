@@ -1,0 +1,138 @@
+2025-12-14 23:51:54.991 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-14 23:51:54.994 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-14 23:51:59.394 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-14 23:51:59.395 [MainThread] INFO __main__: Запуск long polling...
+2025-12-14 23:53:34.072 [MainThread] ERROR TeleBot: Infinity polling exception: 'function' object does not support the context manager protocol
+2025-12-14 23:53:34.074 [MainThread] ERROR TeleBot: Exception traceback:
+Traceback (most recent call last):
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1110, in infinity_polling
+    self.polling(non_stop=True, timeout=timeout, long_polling_timeout=long_polling_timeout,
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1198, in polling
+    self.__threaded_polling(non_stop=non_stop, interval=interval, timeout=timeout, long_polling_timeout=long_polling_timeout,
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1273, in __threaded_polling
+    raise e
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1235, in __threaded_polling
+    self.worker_pool.raise_exceptions()
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\util.py", line 154, in raise_exceptions
+    raise self.exception_info
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 10134, in _run_middlewares_and_handler
+    result = handler['function'](message)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\main.py", line 375, in cmd_model
+    active = set_active_model(int(arg))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\db.py", line 171, in set_active_model
+    with _connect as conn:
+TypeError: 'function' object does not support the context manager protocol
+
+2025-12-14 23:53:47.542 [MainThread] ERROR TeleBot: Infinity polling exception: 'function' object does not support the context manager protocol
+2025-12-14 23:53:47.544 [MainThread] ERROR TeleBot: Exception traceback:
+Traceback (most recent call last):
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1110, in infinity_polling
+    self.polling(non_stop=True, timeout=timeout, long_polling_timeout=long_polling_timeout,
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1198, in polling
+    self.__threaded_polling(non_stop=non_stop, interval=interval, timeout=timeout, long_polling_timeout=long_polling_timeout,
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1273, in __threaded_polling
+    raise e
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 1235, in __threaded_polling
+    self.worker_pool.raise_exceptions()
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\util.py", line 154, in raise_exceptions
+    raise self.exception_info
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\util.py", line 97, in run
+    task(*args, **kwargs)
+  File "D:\Projects\TgBot\pythonProject1\.venv\Lib\site-packages\telebot\__init__.py", line 10134, in _run_middlewares_and_handler
+    result = handler['function'](message)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\main.py", line 375, in cmd_model
+    active = set_active_model(int(arg))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\db.py", line 171, in set_active_model
+    with _connect as conn:
+TypeError: 'function' object does not support the context manager protocol
+
+2025-12-14 23:54:17.557 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for deepseek/deepseek-chat-v3.1:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-14 23:56:28.666 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-14 23:56:28.667 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-14 23:56:29.838 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-14 23:56:29.842 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-14 23:56:30.872 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-14 23:56:30.873 [MainThread] INFO __main__: Запуск long polling...
+2025-12-14 23:56:48.783 [WorkerThread1] ERROR __main__: Ошибка в /model при установке модели: 'function' object does not support the context manager protocol
+2025-12-14 23:58:38.264 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-14 23:58:38.265 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-14 23:58:42.404 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-14 23:58:42.407 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-14 23:58:43.183 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-14 23:58:43.184 [MainThread] INFO __main__: Запуск long polling...
+2025-12-15 00:00:15.029 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for huggingfaceh4/zephyr-7b-beta:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:02:52.447 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-15 00:02:52.447 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-15 00:02:53.092 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-15 00:02:53.095 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-15 00:02:54.326 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-15 00:02:54.326 [MainThread] INFO __main__: Запуск long polling...
+2025-12-15 00:03:11.779 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for huggingfaceh4/zephyr-7b-beta:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:04:21.264 [WorkerThread2] ERROR __main__: Ошибка в /model при установке модели: UNIQUE constraint failed: models.active
+Traceback (most recent call last):
+  File "D:\Projects\TgBot\pythonProject1\main.py", line 396, in cmd_model
+    active = set_active_model(model_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\db.py", line 179, in set_active_model
+    conn.execute("UPDATE models SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (model_id,))
+sqlite3.IntegrityError: UNIQUE constraint failed: models.active
+2025-12-15 00:04:29.914 [WorkerThread2] ERROR __main__: Ошибка в /model при установке модели: UNIQUE constraint failed: models.active
+Traceback (most recent call last):
+  File "D:\Projects\TgBot\pythonProject1\main.py", line 396, in cmd_model
+    active = set_active_model(model_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\db.py", line 179, in set_active_model
+    conn.execute("UPDATE models SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (model_id,))
+sqlite3.IntegrityError: UNIQUE constraint failed: models.active
+2025-12-15 00:04:33.219 [WorkerThread2] ERROR __main__: Ошибка в /model при установке модели: UNIQUE constraint failed: models.active
+Traceback (most recent call last):
+  File "D:\Projects\TgBot\pythonProject1\main.py", line 396, in cmd_model
+    active = set_active_model(model_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\TgBot\pythonProject1\db.py", line 179, in set_active_model
+    conn.execute("UPDATE models SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (model_id,))
+sqlite3.IntegrityError: UNIQUE constraint failed: models.active
+2025-12-15 00:08:03.232 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-15 00:08:03.233 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-15 00:08:03.837 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-15 00:08:03.840 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-15 00:08:05.058 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-15 00:08:05.059 [MainThread] INFO __main__: Запуск long polling...
+2025-12-15 00:08:21.648 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for nousresearch/nous-hermes-2-mixtral-8x7b-dpo:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:08:44.491 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for mistralai/mistral-small-24b-instruct-2501:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:10:37.968 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for meta-llama/llama-3.1-8b-instruct:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:11:48.760 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-15 00:11:48.761 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-15 00:13:20.469 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-15 00:13:20.472 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-15 00:13:21.378 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-15 00:13:21.379 [MainThread] INFO __main__: Запуск long polling...
+2025-12-15 00:13:50.357 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for microsoft/phi-3-mini-128k-instruct:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:14:25.177 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 400): {"error":{"message":"anthropic/claude-3-haiku-20240307 is not a valid model ID","code":400},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:16:47.753 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-15 00:16:47.754 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-15 00:16:59.300 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-15 00:16:59.304 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-15 00:17:00.215 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-15 00:17:00.216 [MainThread] INFO __main__: Запуск long polling...
+2025-12-15 00:17:44.335 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for cognitivecomputations/dolphin-mixtral-8x7b.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:17:53.158 [WorkerThread2] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for huggingfaceh4/zephyr-7b-beta:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:18:00.265 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for gryphe/mythomax-l2-13b:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:18:07.994 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for nousresearch/nous-hermes-2-mixtral-8x7b-dpo:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:18:15.686 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for openchat/openchat-7b:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:18:23.035 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for microsoft/phi-3-mini-128k-instruct:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:18:29.724 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for meta-llama/llama-3-8b-instruct:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:18:53.268 [WorkerThread1] ERROR openrouter_client: Ошибка от OpenRouter API (статус 404): {"error":{"message":"No endpoints found for google/gemma-7b-it:free.","code":404},"user_id":"user_34EC32pfA03Drz5uOHROVsC4aeL"}
+2025-12-15 00:20:52.583 [MainThread] ERROR TeleBot: Infinity polling: polling exited
+2025-12-15 00:20:52.583 [MainThread] ERROR TeleBot: Break infinity polling
+2025-12-15 00:21:59.750 [MainThread] INFO __main__: Старт приложения (инициализация бота)
+2025-12-15 00:21:59.755 [MainThread] INFO __main__: Настройка меню команд...
+2025-12-15 00:22:00.869 [MainThread] INFO __main__: Меню команд успешно настроено.
+2025-12-15 00:22:00.870 [MainThread] INFO __main__: Запуск long polling...
+2025-12-15 00:29:34.780 [WorkerThread1] INFO __main__: Команда /stats от user_id=739293578

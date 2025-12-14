@@ -54,21 +54,13 @@ def init_db():
     );
     """
 
-    # ---> ИЗМЕНЕНИЕ ЗДЕСЬ <---
-    # Шаг 2: Определяем данные для моделей (теперь 10 штук) в отдельной переменной
+
     models_data = """
     INSERT OR IGNORE INTO models(id, key, label, active) VALUES
-        (1, 'anthropic/claude-3-haiku-20240307-v1:beta', 'Claude 3 Haiku (free)', 1),
-        (2, 'google/gemma-7b-it:free', 'Google Gemma 7B (free)', 0),
-        (3, 'mistralai/mistral-7b-instruct:free', 'Mistral 7B Instruct (free)', 0),
-        (4, 'meta-llama/llama-3-8b-instruct:free', 'Llama 3 8B Instruct (free)', 0),
-        (5, 'microsoft/phi-3-mini-128k-instruct:free', 'Phi-3 Mini 128k (free)', 0),
-        (6, 'nousresearch/nous-hermes-2-mixtral-8x7b-dpo:free', 'Nous Hermes 2 Mixtral (free)', 0),
-        (7, 'openchat/openchat-7b:free', 'OpenChat 3.5 (free)', 0),
-        (8, 'gryphe/mythomax-l2-13b:free', 'MythoMax L2 13B (free)', 0),
-        (9, 'huggingfaceh4/zephyr-7b-beta:free', 'Zephyr 7B Beta (free)', 0),
-        (10, 'undi95/toppy-m-7b:free', 'Toppy M 7B (free)', 0);
+        (1, 'mistralai/mistral-7b-instruct:free', 'Mistral 7B Instruct (free)', 1),
+        (2, 'anthropic/claude-3-haiku', 'Claude 3 Haiku', 0);
     """
+
 
     # Шаг 3: Данные для персонажей (этот блок у вас уже есть, он не меняется)
     characters_data = """
@@ -167,15 +159,30 @@ def get_active_model() -> dict:
         conn.execute("UPDATE models SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (row["id"],))
         return {"id":row["id"], "key":row["key"], "label":row["label"], "active":True}
 
-def set_active_model(model_id: int)-> dict:
-    with _connect as conn:
-        conn.execute("BEGIN IMMEDIATE")
+
+# db.py
+
+def set_active_model(model_id: int) -> dict:
+    """
+    Устанавливает новую активную модель, выполняя обновление в 2 шага
+    для максимальной надежности.
+    """
+    with _connect() as conn:
+        # Убедимся, что модель с таким ID вообще существует
         exists = conn.execute("SELECT 1 FROM models WHERE id=?", (model_id,)).fetchone()
         if not exists:
-            conn.rollback()
             raise ValueError("Неизвестный ID модели")
-        conn.execute("UPDATE  models  SET active=CASE WHEN id=? THEN 1 ELSE 0 END", (model_id,))
-        conn.commit()
+
+        # --- НАДЕЖНОЕ ОБНОВЛЕНИЕ В ДВА ШАГА ---
+
+        # Шаг 1: Сначала деактивируем ВСЕ модели.
+        # После этого запроса в таблице гарантированно нет ни одной строки с active=1.
+        conn.execute("UPDATE models SET active=0 WHERE active=1")
+
+        # Шаг 2: Теперь активируем ОДНУ нужную нам модель.
+        # Нарушить UNIQUE constraint теперь невозможно.
+        conn.execute("UPDATE models SET active=1 WHERE id=?", (model_id,))
+
     return get_active_model()
 
 def delete_note(user_id: int, note_id: int) -> bool:

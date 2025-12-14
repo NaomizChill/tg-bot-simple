@@ -15,7 +15,7 @@ from logging_config import setup_logging
 from metrics import metric, timed
 log = logging.getLogger(__name__)
 from openrouter_client import chat_once, OpenRouterError
-from config import DEFAULT_TEMPERATURE, DEFAULT_API_TIMEOUT, WEATHER_COMMAND_ENABLED, ASK_ENABLED # и другие
+from config3 import DEFAULT_TEMPERATURE, DEFAULT_API_TIMEOUT, WEATHER_COMMAND_ENABLED, ASK_ENABLED # и другие
 
 # Настраиваем логирование ДО того, как делаем что-либо еще
 setup_logging()
@@ -24,30 +24,6 @@ setup_logging()
 log = logging.getLogger(__name__)
 
 log.info("Старт приложения (инициализация бота)")
-
-# --- Заглушки для LLM (замените на вашу реализацию) ---
-class OpenRouterError(Exception):
-    pass
-
-def chat_once(...):
-    # main.py -> on_text_message (и другие)
-    # Получаем динамические настройки
-    temperature = float(get_setting_or_default("temperature", str(DEFAULT_TEMPERATURE)))
-    timeout = get_int_setting("api_timeout", DEFAULT_API_TIMEOUT)
-    # Вызываем chat_once с новыми параметрами
-    text, ms = chat_once(msgs, model=model_key, temperature=temperature, timeout_s=timeout)
-    logging.info(f"Имитация запроса к модели {model}")
-    char_name = "Персонаж"
-    try:
-        # Пытаемся извлечь имя персонажа из системного промпта
-        char_name = msgs[0]['content'].split('«')[1].split('»')[0]
-    except (IndexError, KeyError):
-        pass  # Если не получилось, используем имя по умолчанию
-
-    user_question = msgs[-1]['content']
-    mock_response = f"Я {char_name}. Ваш вопрос '{user_question}' очень интересен. Это имитация ответа."
-
-    return mock_response, 500  # (текст ответа, время ответа в мс)
 
 
 # Загрузка переменных окружения и инициализация бота
@@ -380,27 +356,51 @@ def cmd_models(message: types.Message) -> None:
     lines.append("\nАктивировать: /model <ID>")
     bot.reply_to(message, "\n".join(lines))
 
+# main.py
+
 @bot.message_handler(commands=['model'])
-def cmd_model(message: types.Message)->None:
+def cmd_model(message: types.Message) -> None:
+    """
+    Показывает текущую активную модель или устанавливает новую по ID.
+    """
+    # Считаем метрики вызова
     metric.counter("commands_total").inc()
-    metric.counter("character_requests_total").inc()
-    arg = message.text.replace("/model" , "" , 1).strip()
+    metric.counter("model_requests_total").inc()
+
+    # Проверяем, включена ли команда через Feature Toggle
     if not is_feature_enabled("model_commands", CMD_MODEL_ID_ENABLED):
-        bot.reply_to(message, "Команда временно отключена.")
+        bot.reply_to(message, "Команды выбора модели временно отключены.")
         return
+
+    # Получаем аргумент (число) после команды /model
+    arg = message.text.replace("/model", "", 1).strip()
+
+    # Сценарий 1: Аргумента нет, просто показываем текущую модель
     if not arg:
-        active = get_active_model()
-        bot.reply_to(message , f"Текущая активная моедль: {active['label']} [{active['key']}]\n(сменить: /model <ID> или /models)")
+        try:
+            active = get_active_model()
+            bot.reply_to(message, f"Текущая активная модель: {active['label']} [{active['key']}]\n(сменить: /model <ID> или /models)")
+        except Exception as e:
+            log.error(f"Ошибка в /model при получении активной модели: {e}", exc_info=True)
+            bot.reply_to(message, f"Не удалось получить активную модель: {e}")
         return
+
+    # Сценарий 2: Аргумент есть, но это не число
     if not arg.isdigit():
         bot.reply_to(message, "Использование: /model <ID из /models>")
         return
-    try:
-        active = set_active_model(int(arg))
-        bot.reply_to(message, f"Активная модель переключена: {active['label']} [{active["key"]}]")
-    except ValueError:
-        bot.reply_to(message, "Неизвестный ID модели. Сначала /models.")
 
+    # Сценарий 3: Аргумент - это число. Пытаемся установить новую модель.
+    try:
+        model_id = int(arg)
+        active = set_active_model(model_id)
+        bot.reply_to(message, f"Активная модель переключена на: {active['label']} [{active['key']}]")
+    except ValueError as e:
+        # Эта ошибка возникает, если в db.py нет модели с таким ID
+        bot.reply_to(message, str(e)) # Показываем текст ошибки из db.py
+    except Exception as e:
+        log.error(f"Ошибка в /model при установке модели: {e}", exc_info=True)
+        bot.reply_to(message, f"Произошла непредвиденная ошибка: {e}")
 
 @bot.message_handler(commands=['start', 'help'])
 def cmd_start(message: types.Message) -> None:
