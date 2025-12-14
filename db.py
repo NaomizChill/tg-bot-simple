@@ -12,21 +12,16 @@ def _connect():
     return conn
 
 
+# db.py
+
 def init_db():
+    # Шаг 1: Определяем структуру всех таблиц
     schema = """
     CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         text TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS feature_toggles (
-        name TEXT PRIMARY KEY,
-        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1))
     );
     CREATE TABLE IF NOT EXISTS models(
         id INTEGER PRIMARY KEY,
@@ -36,13 +31,6 @@ def init_db():
     );
     CREATE UNIQUE INDEX IF NOT EXISTS ux_models_single_active ON models(active) WHERE active=1;
 
-    INSERT OR IGNORE INTO models(id, key, label, active) VALUES
-        (1, 'deepseek/deepseek-chat-v3.1:free', 'DeepSeek V3.1 (free)', 1),
-        (2, 'deepseek/deepseek-r1:free', 'DeepSeek R1 (free)', 0),
-        (3, 'mistralai/mistral-small-24b-instruct-2501:free', 'Mistral Small 24b (free)', 0),
-        (4, 'meta-llama/llama-3.1-8b-instruct:free', 'Llama 3.1 8B (free)', 0);
-
-    /* --- НОВЫЕ ТАБЛИЦЫ ДЛЯ ПЕРСОНАЖЕЙ --- */
     CREATE TABLE IF NOT EXISTS characters (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
@@ -54,8 +42,35 @@ def init_db():
         character_id INTEGER NOT NULL,
         FOREIGN KEY(character_id) REFERENCES characters(id)
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS feature_toggles (
+        name TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1))
+    );
     """
 
+    # ---> ИЗМЕНЕНИЕ ЗДЕСЬ <---
+    # Шаг 2: Определяем данные для моделей (теперь 10 штук) в отдельной переменной
+    models_data = """
+    INSERT OR IGNORE INTO models(id, key, label, active) VALUES
+        (1, 'anthropic/claude-3-haiku-20240307-v1:beta', 'Claude 3 Haiku (free)', 1),
+        (2, 'google/gemma-7b-it:free', 'Google Gemma 7B (free)', 0),
+        (3, 'mistralai/mistral-7b-instruct:free', 'Mistral 7B Instruct (free)', 0),
+        (4, 'meta-llama/llama-3-8b-instruct:free', 'Llama 3 8B Instruct (free)', 0),
+        (5, 'microsoft/phi-3-mini-128k-instruct:free', 'Phi-3 Mini 128k (free)', 0),
+        (6, 'nousresearch/nous-hermes-2-mixtral-8x7b-dpo:free', 'Nous Hermes 2 Mixtral (free)', 0),
+        (7, 'openchat/openchat-7b:free', 'OpenChat 3.5 (free)', 0),
+        (8, 'gryphe/mythomax-l2-13b:free', 'MythoMax L2 13B (free)', 0),
+        (9, 'huggingfaceh4/zephyr-7b-beta:free', 'Zephyr 7B Beta (free)', 0),
+        (10, 'undi95/toppy-m-7b:free', 'Toppy M 7B (free)', 0);
+    """
+
+    # Шаг 3: Данные для персонажей (этот блок у вас уже есть, он не меняется)
     characters_data = """
     INSERT OR IGNORE INTO characters (id, name, prompt) VALUES
         (1, 'Йода', 'Ты отвечаешь строго в образе персонажа «Йода» из вселенной «Звёздные войны». Стиль: мудрые и загадочные речи, инверсия слов.'),
@@ -71,10 +86,11 @@ def init_db():
         (11, 'Бендер', 'Ты отвечаешь строго в образе «Бендера» из «Футурамы». Стиль: дерзкий, самоуверенный, эгоистичный.');
     """
 
+    # Шаг 4: Выполняем все запросы
     with _connect() as conn:
         conn.executescript(schema)
+        conn.executescript(models_data)  # <--- Добавляем выполнение запроса для моделей
         conn.executescript(characters_data)
-
 
 
 def add_note(user_id: int, text: str) -> int:

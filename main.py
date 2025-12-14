@@ -14,6 +14,8 @@ from db import set_setting, set_feature_toggle # и другие
 from logging_config import setup_logging
 from metrics import metric, timed
 log = logging.getLogger(__name__)
+from openrouter_client import chat_once, OpenRouterError
+from config import DEFAULT_TEMPERATURE, DEFAULT_API_TIMEOUT, WEATHER_COMMAND_ENABLED, ASK_ENABLED # и другие
 
 # Настраиваем логирование ДО того, как делаем что-либо еще
 setup_logging()
@@ -24,15 +26,16 @@ log = logging.getLogger(__name__)
 log.info("Старт приложения (инициализация бота)")
 
 # --- Заглушки для LLM (замените на вашу реализацию) ---
-
 class OpenRouterError(Exception):
     pass
 
-
-def chat_once(msgs: list[dict], model: str, temperature: float = 0.2, max_tokens: int = 400) -> tuple[str, int]:
-    """
-    Эта функция-заглушка имитирует обращение к LLM.
-    """
+def chat_once(...):
+    # main.py -> on_text_message (и другие)
+    # Получаем динамические настройки
+    temperature = float(get_setting_or_default("temperature", str(DEFAULT_TEMPERATURE)))
+    timeout = get_int_setting("api_timeout", DEFAULT_API_TIMEOUT)
+    # Вызываем chat_once с новыми параметрами
+    text, ms = chat_once(msgs, model=model_key, temperature=temperature, timeout_s=timeout)
     logging.info(f"Имитация запроса к модели {model}")
     char_name = "Персонаж"
     try:
@@ -351,6 +354,9 @@ def on_sum_numbers(m: types.Message):
 
 @bot.message_handler(func=lambda m: m.text == "Погода (Москва)")
 def kb_weather_moscow(m: types.Message):
+    if not is_feature_enabled("weather_command_enabled", WEATHER_COMMAND_ENABLED):
+        bot.reply_to(message, "Команда погоды временно отключена.")
+        return
     metric.counter("commands_total").inc()
     metric.counter("character_requests_total").inc()
     """Отправляет погоду для Москвы по нажатию кнопки."""
@@ -513,6 +519,12 @@ def cmd_ask_random(message: types.Message) -> None:
         msgs = _build_messages_for_character(character, q[:600])
         model_key = get_active_model()["key"]
         text, ms = chat_once(msgs, model=model_key)
+        # main.py -> on_text_message (и другие)
+        # Получаем динамические настройки
+        temperature = float(get_setting_or_default("temperature", str(DEFAULT_TEMPERATURE)))
+        timeout = get_int_setting("api_timeout", DEFAULT_API_TIMEOUT)
+        # Вызываем chat_once с новыми параметрами
+        text, ms = chat_once(msgs, model=model_key, temperature=temperature, timeout_s=timeout)
         bot.reply_to(message, f"{text}\n\n_({ms} мс; как: {character['name']})_", parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, f"Ошибка: {e}")
@@ -544,6 +556,12 @@ def cmd_ask_model(message: types.Message) -> None:
         bot.send_chat_action(message.chat.id, 'typing')
         msgs = _build_messages(message.from_user.id, q[:600])
         text, ms = chat_once(msgs, model=model_key)
+        # main.py -> on_text_message (и другие)
+        # Получаем динамические настройки
+        temperature = float(get_setting_or_default("temperature", str(DEFAULT_TEMPERATURE)))
+        timeout = get_int_setting("api_timeout", DEFAULT_API_TIMEOUT)
+        # Вызываем chat_once с новыми параметрами
+        text, ms = chat_once(msgs, model=model_key, temperature=temperature, timeout_s=timeout)
         character = get_user_character(message.from_user.id)
         bot.reply_to(message, f"{text}\n\n_({ms} мс; модель: {model_key}; как: {character['name']})_",
                      parse_mode="Markdown")
@@ -553,6 +571,9 @@ def cmd_ask_model(message: types.Message) -> None:
 
 @bot.message_handler(func=lambda message: True)
 def on_text_message(message: types.Message):
+    if not is_feature_enabled("ask_enabled", ASK_ENABLED):
+        # Можно ничего не отвечать или написать "Функция временно отключена"
+        return
     metric.counter("commands_total").inc()
     metric.counter("character_requests_total").inc()
     """Обрабатывает текстовые сообщения как вопросы к LLM."""
@@ -570,6 +591,12 @@ def on_text_message(message: types.Message):
         msgs = _build_messages(message.from_user.id, q)
         model_key = get_active_model()["key"]
         text, ms = chat_once(msgs, model=model_key)
+        # main.py -> on_text_message (и другие)
+        # Получаем динамические настройки
+        temperature = float(get_setting_or_default("temperature", str(DEFAULT_TEMPERATURE)))
+        timeout = get_int_setting("api_timeout", DEFAULT_API_TIMEOUT)
+        # Вызываем chat_once с новыми параметрами
+        text, ms = chat_once(msgs, model=model_key, temperature=temperature, timeout_s=timeout)
         character = get_user_character(message.from_user.id)
 
         add_info = f"\n\n_({ms} мс; модель: {model_key}; как: {character['name']})_" if show_footer else ""

@@ -39,3 +39,12 @@ SHOW_MODEL_FOOTER_DEFAULT = True
 DEBUG_SETTINGS_SHOW = False
 # Включить команды /model и /models
 CMD_MODEL_ID_ENABLED = True
+
+
+# --- Дополнительные динамические параметры ---
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_API_TIMEOUT = 30 # в секундах
+
+# --- Дополнительные Feature Toggles ---
+WEATHER_COMMAND_ENABLED = True
+ASK_ENABLED = True

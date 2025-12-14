@@ -1,17 +1,26 @@
 # .coveragerc
+
 [run]
 branch = True
 source =
-    db
-    main
+    main.py
+    db.py
+    openrouter_client.py
+    metrics.py
+    logging_config.py
 
 [report]
 omit =
     tests/*
     */venv/*
-    config.py
+    config*.py
     cleanup_coverage.py
     conftest.py
+    main2.py
+    main3.py
+    db3.py
+    db_pankratov.py
+    get_project.py
 
 show_missing = True
 skip_covered = False
