@@ -17,6 +17,13 @@ def _connect():
 def init_db():
     # Шаг 1: Определяем структуру всех таблиц
     schema = """
+    CREATE TABLE IF NOT EXISTS chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -309,3 +316,33 @@ def set_feature_toggle(name: str, enabled: bool) -> None:
             "ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled",
             (name, 1 if enabled else 0),
         )
+
+# db.py (в самый конец файла)
+
+# --- Функции для работы с историей чата ---
+
+def add_to_chat_history(user_id: int, role: str, message: str):
+    """Добавляет новое сообщение в историю чата пользователя."""
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_history (user_id, role, message) VALUES (?, ?, ?)",
+            (user_id, role, message)
+        )
+
+def get_chat_history(user_id: int, limit: int = 10) -> list[dict]:
+    """Получает последние 'limit' сообщений из истории чата."""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT role, message FROM chat_history
+            WHERE user_id = ? ORDER BY id DESC LIMIT ?
+            """,
+            (user_id, limit)
+        ).fetchall()
+        # Возвращаем в хронологическом порядке (старые -> новые)
+        return [{"role": r["role"], "message": r["message"]} for r in reversed(rows)]
+
+def clear_chat_history(user_id: int):
+    """Очищает всю историю чата для пользователя."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
